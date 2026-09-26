@@ -1,121 +1,353 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 void main() {
-  runApp(const MyApp());
+  runApp(const FaunaUrbanaApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class FaunaUrbanaApp extends StatelessWidget {
+  const FaunaUrbanaApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
+      title: 'Fauna Urbana',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.green),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const HomePage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class HomePage extends StatefulWidget {
+  const HomePage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _HomePageState extends State<HomePage> {
+  List<dynamic> ocorrencias = [];
+  bool carregando = true;
+  String? erro;
 
-  void _incrementCounter() {
+  @override
+  void initState() {
+    super.initState();
+    buscarOcorrencias();
+  }
+
+  Future<void> buscarOcorrencias() async {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      carregando = true;
+      erro = null;
     });
+
+    try {
+      final resposta = await http.get(
+        Uri.parse('http://127.0.0.1:8000/ocorrencias'),
+      );
+
+      if (resposta.statusCode == 200) {
+        setState(() {
+          ocorrencias = jsonDecode(resposta.body);
+          carregando = false;
+        });
+      } else {
+        setState(() {
+          erro = 'Erro da API: ${resposta.statusCode}';
+          carregando = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        erro = 'Não foi possível conectar à API.';
+        carregando = false;
+      });
+    }
+  }
+
+  Future<void> registrarOcorrencia(
+    double latitude,
+    double longitude,
+    String situacao,
+  ) async {
+    final resposta = await http.post(
+      Uri.parse('http://127.0.0.1:8000/ocorrencias'),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'latitude': latitude,
+        'longitude': longitude,
+        'situacao': situacao,
+      }),
+    );
+
+    if (resposta.statusCode == 200) {
+      await buscarOcorrencias();
+    } else {
+      throw Exception('Erro ao registrar ocorrência');
+    }
+  }
+
+  void abrirFormulario() {
+    final situacaoController = TextEditingController();
+    final latitudeController =
+        TextEditingController(text: '-20.4697');
+    final longitudeController =
+        TextEditingController(text: '-54.6201');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Registrar ocorrência'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: situacaoController,
+                  decoration: const InputDecoration(
+                    labelText: 'Situação',
+                    hintText: 'Ex.: Animal encontrado próximo à via',
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: latitudeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Latitude',
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                TextField(
+                  controller: longitudeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Longitude',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final situacao = situacaoController.text;
+
+                if (situacao.isEmpty) {
+                  return;
+                }
+
+                final latitude =
+                    double.tryParse(latitudeController.text);
+
+                final longitude =
+                    double.tryParse(longitudeController.text);
+
+                if (latitude == null || longitude == null) {
+                  return;
+                }
+
+                try {
+                  await registrarOcorrencia(
+                    latitude,
+                    longitude,
+                    situacao,
+                  );
+
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Erro ao registrar ocorrência.',
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Registrar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('Fauna Urbana'),
+        actions: [
+          IconButton(
+            onPressed: buscarOcorrencias,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: abrirFormulario,
+        icon: const Icon(Icons.add),
+        label: const Text('Registrar'),
+      ),
+
+      body: RefreshIndicator(
+        onRefresh: buscarOcorrencias,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            const Text(
+              'Monitoramento da fauna urbana',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
             ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              'Registro e visualização de ocorrências de fauna.',
+              style: TextStyle(fontSize: 16),
+            ),
+
+            const SizedBox(height: 20),
+
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.pets,
+                      size: 40,
+                    ),
+                    const SizedBox(width: 16),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Ocorrências registradas',
+                          style: TextStyle(fontSize: 15),
+                        ),
+                        Text(
+                          '${ocorrencias.length}',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            if (carregando)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(30),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+
+            if (erro != null)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(erro!),
+                ),
+              ),
+
+            if (!carregando && erro == null && ocorrencias.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(
+                    'Nenhuma ocorrência registrada.',
+                  ),
+                ),
+              ),
+
+            for (final ocorrencia in ocorrencias)
+              Card(
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Ocorrência #${ocorrencia['id']}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Text(
+                        ocorrencia['situacao'],
+                        style: const TextStyle(fontSize: 16),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Text(
+                        'Latitude: ${ocorrencia['latitude']}',
+                      ),
+
+                      Text(
+                        'Longitude: ${ocorrencia['longitude']}',
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      Text(
+                        'Registrado em: ${ocorrencia['data_registro']}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
