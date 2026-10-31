@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import '../services/admin_controller.dart';
 import '../theme.dart';
 
@@ -45,17 +46,18 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                       key: _form,
                       child: AutofillGroup(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                          const CircleAvatar(
-                            radius: 30,
-                            backgroundColor: pale,
-                            child: Icon(Icons.admin_panel_settings_outlined, color: forest, size: 30),
+                          Center(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.asset('assets/icone_app.png', width: 64, height: 64),
+                            ),
                           ),
                           const SizedBox(height: 16),
                           const Text('Painel administrativo',
                               textAlign: TextAlign.center,
                               style: TextStyle(color: ink, fontSize: 24, fontWeight: FontWeight.w800)),
                           const SizedBox(height: 6),
-                          const Text('Fauna Urbana • acesso restrito à equipe',
+                          const Text('$nomeApp • acesso restrito à equipe',
                               textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 13)),
                           const SizedBox(height: 28),
                           TextFormField(

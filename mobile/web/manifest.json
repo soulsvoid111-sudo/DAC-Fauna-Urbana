@@ -1,11 +1,11 @@
 {
-    "name": "Fauna Urbana",
-    "short_name": "Fauna Urbana",
+    "name": "SOFUR - Sistema de Ocorrências da Fauna Urbana",
+    "short_name": "SOFUR",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#F5F7F3",
     "theme_color": "#205C45",
-    "description": "A new Flutter project.",
+    "description": "Registre ocorrências de fauna urbana com foto e localização.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

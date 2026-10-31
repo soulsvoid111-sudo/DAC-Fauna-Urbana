@@ -1,6 +1,8 @@
-# DAC — Fauna Urbana
+<p align="center"><img src="marca/logo.png" alt="SOFUR" width="480"></p>
 
-## Sistema de Mapeamento e Proteção da Fauna Urbana
+# SOFUR — Sistema de Ocorrências da Fauna Urbana
+
+Projeto do DAC (UCDB). **Acesse:** https://fauna-urbana.onrender.com • **Painel da equipe:** https://fauna-urbana.onrender.com/#/admin
 
 Projeto desenvolvido para o Desafio de Articulação de Competências (DAC) do curso de Análise e Desenvolvimento de Sistemas.
 
@@ -170,6 +172,7 @@ flutter test
   * build `bash build_web.sh`;
   * pasta publicada `build/web`;
   * variável `API_URL` com o endereço da API (ex.: `https://fauna-urbana-api.onrender.com`).
+* **Publicar uma nova versão:** o repositório está ligado ao Render como repositório público, então depois de juntar algo na `main` é preciso clicar em *Manual Deploy → Deploy latest commit* na API e no site.
 * **Manter a API acordada:** o plano gratuito desliga a API após 15 min sem uso. O workflow `.github/workflows/manter-api-acordada.yml` chama a API a cada 10 min. Para ativar, crie a variável `API_URL` em *Settings → Secrets and variables → Actions → Variables*.
 * **Fotos:** ficam guardadas no próprio banco (tabela `fotos`), porque o disco do plano gratuito é apagado a cada reinício.
 
@@ -193,6 +196,10 @@ flutter test
   * `FAUNA_ADMIN_USUARIO`: nome de usuário;
   * `FAUNA_ADMIN_SENHA_HASH`: gerado com `python auth.py "a senha"` dentro de `backend/`;
   * `FAUNA_SECRET_KEY`: texto aleatório e longo (no Render, use o botão *Generate*).
+
+### 7.6 Marca e ícones
+
+A logo e os ícones ficam em `marca/` e são gerados por código (`python marca/gerar_marca.py`, precisa do Pillow). Para aplicar os ícones no app: copie `marca/icone.png` e `marca/icone_frente.png` para `mobile/assets/` e rode `dart run flutter_launcher_icons` dentro de `mobile/`.
 
 ---
 
