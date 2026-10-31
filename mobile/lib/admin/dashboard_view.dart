@@ -4,6 +4,8 @@ import '../models/estatisticas.dart';
 import '../models/ocorrencia.dart';
 import '../services/admin_controller.dart';
 import '../theme.dart';
+import '../widgets/comuns.dart';
+import '../widgets/detalhe_sheet.dart';
 
 class DashboardView extends StatelessWidget {
   const DashboardView({super.key, required this.controller, required this.irParaOcorrencias});
@@ -37,6 +39,11 @@ class DashboardView extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 children: [
                   _Indicadores(e: e, irParaOcorrencias: irParaOcorrencias),
+                  const SizedBox(height: 16),
+                  _Painel(
+                    titulo: 'Urgentes em aberto (${controller.urgentesAbertas.length})',
+                    child: _ListaUrgentes(controller: controller, verTodas: () => irParaOcorrencias(StatusOcorrencia.aberta)),
+                  ),
                   const SizedBox(height: 16),
                   _Painel(titulo: 'Registros nos últimos 30 dias', child: _GraficoDias(e.porDia)),
                   const SizedBox(height: 16),
@@ -267,6 +274,44 @@ class _TopEspecies extends StatelessWidget {
     final maximo = especies.first.$2;
     return Column(children: [
       for (final (nome, total) in especies) _Barra(rotulo: nome, valor: total, maximo: maximo, cor: forest),
+    ]);
+  }
+}
+
+
+/// Casos de animal ferido, em risco ou dentro de imóvel que ainda ninguém tratou.
+class _ListaUrgentes extends StatelessWidget {
+  const _ListaUrgentes({required this.controller, required this.verTodas});
+  final AdminController controller;
+  final VoidCallback verTodas;
+
+  @override
+  Widget build(BuildContext context) {
+    final urgentes = controller.urgentesAbertas;
+    if (urgentes.isEmpty) {
+      return const Row(children: [
+        Icon(Icons.task_alt, color: forest, size: 20),
+        SizedBox(width: 8),
+        Expanded(child: Text('Nenhum caso urgente esperando atendimento.', style: TextStyle(color: muted))),
+      ]);
+    }
+    return Column(children: [
+      for (final o in urgentes.take(5))
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: IconeTipo(tipo: o.tipo, tamanho: 40),
+          title: Text('#${o.codigo} • ${o.titulo}',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          subtitle: Text('${o.tipo.rotulo} • ${formatarData(o.dataRegistro)}',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => mostrarDetalhe(context, o, urlFoto: controller.urlFoto(o)),
+        ),
+      if (urgentes.length > 5)
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(onPressed: verTodas, child: Text('Ver todas (${urgentes.length})')),
+        ),
     ]);
   }
 }

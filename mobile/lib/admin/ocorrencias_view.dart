@@ -138,7 +138,7 @@ class _LinhaOcorrencia extends StatelessWidget {
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => mostrarDetalhe(context, controller.ocorrencias, o),
+          onTap: () => mostrarDetalhe(context, o, urlFoto: controller.urlFoto(o)),
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -148,7 +148,7 @@ class _LinhaOcorrencia extends StatelessWidget {
                   child: SizedBox(
                     width: 56,
                     height: 56,
-                    child: FotoOcorrencia(ocorrencia: o, api: controller.api, altura: 56),
+                    child: FotoOcorrencia(ocorrencia: o, url: controller.urlFoto(o), altura: 56),
                   ),
                 )
               else

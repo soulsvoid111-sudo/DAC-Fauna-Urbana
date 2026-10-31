@@ -11,12 +11,13 @@ import '../config.dart';
 import '../data/especies.dart';
 import '../models/ocorrencia.dart';
 import '../services/api.dart';
-import '../services/ocorrencias_controller.dart';
+import '../services/meus_registros_controller.dart';
+import 'confirmacao_screen.dart';
 import '../theme.dart';
 
 class RegistroScreen extends StatefulWidget {
   const RegistroScreen({super.key, required this.controller});
-  final OcorrenciasController controller;
+  final MeusRegistrosController controller;
 
   @override
   State<RegistroScreen> createState() => _RegistroScreenState();
@@ -106,7 +107,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
     if (!_form.currentState!.validate()) return;
     setState(() => _enviando = true);
     try {
-      final resultado = await widget.controller.registrar(NovaOcorrencia(
+      final (registro, resultado) = await widget.controller.enviar(NovaOcorrencia(
         ponto: _ponto,
         situacao: _situacao.text.trim(),
         tipo: _tipo,
@@ -115,23 +116,17 @@ class _RegistroScreenState extends State<RegistroScreen> {
         nomeFoto: _nomeFoto,
       ));
       if (!mounted) return;
-      Navigator.pop(context);
-      _avisarNaTelaAnterior(switch (resultado) {
-        ResultadoRegistro.salvoNoBanco => 'Ocorrência registrada. Obrigado por ajudar!',
-        ResultadoRegistro.salvoSemFoto => 'Ocorrência registrada, mas a foto não foi enviada. Tente uma foto menor.',
-        ResultadoRegistro.salvoNaDemo => 'Sem conexão: o registro ficou só neste aparelho (modo demonstração).',
-      });
+      Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+        builder: (_) => ConfirmacaoScreen(registro: registro, fotoNaoEnviada: resultado == ResultadoEnvio.enviadoSemFoto),
+      ));
     } on ApiException catch (e) {
       _avisar(e.mensagem);
-      setState(() => _enviando = false);
+      if (mounted) setState(() => _enviando = false);
     } catch (_) {
-      _avisar('Não foi possível registrar a ocorrência.');
-      setState(() => _enviando = false);
+      _avisar('Não foi possível enviar agora. Verifique a internet e tente de novo; seus dados continuam aqui.');
+      if (mounted) setState(() => _enviando = false);
     }
   }
-
-  void _avisarNaTelaAnterior(String texto) =>
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(texto)));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -144,11 +139,6 @@ class _RegistroScreenState extends State<RegistroScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                 children: [
-                  if (widget.controller.modoDemonstracao) ...[
-                    const Text('Modo demonstração: este registro não será enviado ao banco.',
-                        style: TextStyle(color: warnInk, fontSize: 12, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 12),
-                  ],
                   _titulo('1. Foto', 'Ajuda a identificar o animal. Mantenha distância segura.'),
                   _secaoFoto(),
                   const SizedBox(height: 24),
@@ -165,7 +155,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
                         onSelected: (_) => setState(() => _tipo = t),
                       ),
                   ]),
-                  if (_tipo.urgente) ...[const SizedBox(height: 12), const _AvisoUrgente()],
+                  if (_tipo.urgente) ...[const SizedBox(height: 12), const AvisoUrgente()],
                   const SizedBox(height: 24),
                   _titulo('3. Qual animal?', 'Opcional. Deixe em branco se não souber.'),
                   _campoEspecie(),
@@ -201,7 +191,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
               icon: _enviando
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.send_rounded),
-              label: Text(_enviando ? 'Enviando...' : 'Enviar registro',
+              label: Text(_enviando ? 'Enviando para a equipe...' : 'Enviar para a equipe SOFUR',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             ),
           ),
@@ -336,8 +326,11 @@ class _RegistroScreenState extends State<RegistroScreen> {
   }
 }
 
-class _AvisoUrgente extends StatelessWidget {
-  const _AvisoUrgente();
+class AvisoUrgente extends StatelessWidget {
+  const AvisoUrgente({super.key, this.depoisDoEnvio = false});
+
+  /// Na tela de confirmação o registro já foi feito: muda o texto.
+  final bool depoisDoEnvio;
 
   Widget _ligar(String numero, String rotulo) => Expanded(
         child: OutlinedButton(
@@ -373,9 +366,11 @@ class _AvisoUrgente extends StatelessWidget {
             ),
           ]),
           const SizedBox(height: 6),
-          const Text(
-            'Não tente pegar ou alimentar o animal. Acione a Polícia Militar Ambiental pelo 190 ou o Corpo de Bombeiros pelo 193, e depois registre aqui.',
-            style: TextStyle(color: Color(0xFF6B1B16), fontSize: 12, height: 1.4),
+          Text(
+            depoisDoEnvio
+                ? 'Se o animal corre perigo agora, não espere: ligue para a Polícia Militar Ambiental (190) ou para o Corpo de Bombeiros (193). Não tente pegar ou alimentar o animal.'
+                : 'Não tente pegar ou alimentar o animal. Acione a Polícia Militar Ambiental pelo 190 ou o Corpo de Bombeiros pelo 193, e depois registre aqui.',
+            style: const TextStyle(color: Color(0xFF6B1B16), fontSize: 12, height: 1.4),
           ),
           const SizedBox(height: 10),
           Row(children: [

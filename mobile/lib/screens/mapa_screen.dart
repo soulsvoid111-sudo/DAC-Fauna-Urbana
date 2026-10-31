@@ -4,10 +4,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
 import '../services/ocorrencias_controller.dart';
-import '../theme.dart';
+import '../widgets/comuns.dart';
 import '../widgets/detalhe_sheet.dart';
-import 'lista_screen.dart';
 
+/// Mapa com todas as ocorrências (usado no painel da equipe).
 class MapaScreen extends StatelessWidget {
   const MapaScreen({super.key, required this.controller});
   final OcorrenciasController controller;
@@ -31,7 +31,7 @@ class MapaScreen extends StatelessWidget {
                     width: 44,
                     height: 44,
                     child: GestureDetector(
-                      onTap: () => mostrarDetalhe(context, controller, o),
+                      onTap: () => mostrarDetalhe(context, o, urlFoto: controller.urlFoto?.call(o)),
                       child: Container(
                         decoration: BoxDecoration(
                           color: o.tipo.cor,
@@ -58,21 +58,6 @@ class MapaScreen extends StatelessWidget {
             top: 10,
             child: FiltroTipos(controller: controller, fundoBranco: true),
           ),
-          if (controller.modoDemonstracao)
-            Positioned(
-              left: 12,
-              bottom: 12,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: warnBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: warnBorder),
-                ),
-                child: const Text('Dados de demonstração',
-                    style: TextStyle(color: warnInk, fontSize: 11, fontWeight: FontWeight.w700)),
-              ),
-            ),
         ]),
       );
 }

@@ -11,8 +11,8 @@ class OcorrenciaRepository:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 f"""
-                INSERT INTO ocorrencias (latitude, longitude, situacao, tipo, especie)
-                VALUES (%(latitude)s, %(longitude)s, %(situacao)s, %(tipo)s, %(especie)s)
+                INSERT INTO ocorrencias (latitude, longitude, situacao, tipo, especie, chave_hash)
+                VALUES (%(latitude)s, %(longitude)s, %(situacao)s, %(tipo)s, %(especie)s, %(chave_hash)s)
                 RETURNING {COLUNAS};
                 """,
                 dados,
@@ -42,6 +42,23 @@ class OcorrenciaRepository:
         with self.connection.cursor() as cursor:
             cursor.execute(f"SELECT {COLUNAS} FROM ocorrencias WHERE id = %s;", (id,))
             return cursor.fetchone()
+
+    def chave_hash(self, id: int) -> str | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT chave_hash FROM ocorrencias WHERE id = %s;", (id,))
+            linha = cursor.fetchone()
+            return linha["chave_hash"] if linha else None
+
+    def buscar_com_chaves(self, ids: list[int]) -> list[dict]:
+        """Devolve as ocorrências pedidas com o hash da chave, para conferir quem pode ver."""
+        if not ids:
+            return []
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT {COLUNAS}, chave_hash FROM ocorrencias WHERE id = ANY(%s) ORDER BY data_registro DESC;",
+                (ids,),
+            )
+            return cursor.fetchall()
 
     def atualizar(self, id: int, campo: str, valor) -> dict | None:
         if campo != "status":

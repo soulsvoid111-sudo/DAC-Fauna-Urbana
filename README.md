@@ -79,14 +79,15 @@ A identificação por inteligência artificial será utilizada como recurso de a
 
 ## 5. Estado atual do protótipo
 
-O sistema já permite:
+**Aplicativo público (quem registra):**
 
-* registrar uma ocorrência com **tipo** (avistamento, animal ferido, atropelamento, em risco, dentro de imóvel), **espécie** (com sugestões de espécies comuns em MS), descrição e **foto**;
-* obter a localização pelo **GPS** do aparelho ou marcar o ponto tocando no **mapa**;
-* ver as ocorrências em **lista** (com filtros por tipo) e no **mapa** (marcadores coloridos por tipo);
-* abrir os detalhes de uma ocorrência e acompanhar o **status** (aberta, em análise, resolvida, descartada);
-* ver orientação de emergência (190 / 193) quando o animal está ferido ou em risco;
-* usar o app em **modo demonstração** quando a API está fora do ar, com aviso claro de que nada vai para o banco.
+* serve **apenas para registrar e encaminhar** ocorrências à equipe: tipo (avistamento, animal ferido, atropelado ou morto, em risco, dentro de imóvel), espécie, descrição, **foto** e **localização** (GPS ou toque no mapa);
+* ao enviar, mostra o **número de protocolo** e, em casos urgentes, os atalhos para 190 e 193;
+* **"Meus registros"** mostra só o que foi registrado **naquele aparelho** (guardado no próprio celular), com a situação atualizada pela equipe. Ninguém vê registros de outras pessoas.
+
+**Painel da equipe** (`/#/admin`, com login): recebe todas as ocorrências, destaca as **urgentes em aberto**, atualiza sozinho a cada minuto e avisa quando chega ocorrência nova; tem lista com busca e filtros, mudança de status, exclusão, mapa e indicadores.
+
+**Privacidade:** a lista de ocorrências e as fotos só abrem com o login da equipe. Cada registro recebe uma **chave secreta** que fica só no celular de quem registrou (o servidor guarda apenas o hash dela) e permite acompanhar o próprio registro.
 
 ### Fluxo atualmente funcional
 
@@ -233,16 +234,17 @@ DAC-Fauna-Urbana/
 |---|---|---|
 | GET | `/` | Verifica se a API está no ar |
 | GET | `/db-test` | Testa a conexão com o PostgreSQL |
-| POST | `/ocorrencias` | Cria uma ocorrência (responde **201**) |
-| GET | `/ocorrencias?tipo=&status=&limite=` | Lista, com filtros opcionais |
-| GET | `/ocorrencias/resumo` | Totais por tipo e por status |
-| GET | `/ocorrencias/{id}` | Busca uma ocorrência (**404** se não existir) |
+| POST | `/ocorrencias` | Cria uma ocorrência (responde **201** com a `chave` de acompanhamento) |
+| POST | `/ocorrencias/acompanhar` | Situação dos registros de quem tem as chaves ("Meus registros") |
+| GET | `/ocorrencias?tipo=&status=&limite=` | Lista, com filtros opcionais (**admin**) |
+| GET | `/ocorrencias/resumo` | Totais por tipo e por status (**admin**) |
+| GET | `/ocorrencias/{id}` | Busca uma ocorrência (**admin**; **404** se não existir) |
 | PATCH | `/ocorrencias/{id}/status` | Altera o status (**admin**) |
 | DELETE | `/ocorrencias/{id}` | Apaga a ocorrência (**admin**) |
 | POST | `/admin/login` | Login do painel; devolve o token |
 | GET | `/admin/estatisticas` | Números do painel (**admin**) |
-| POST | `/ocorrencias/{id}/foto` | Envia a foto (JPG, PNG ou WEBP, até 8 MB) |
-| GET | `/ocorrencias/{id}/foto` | Devolve a foto |
+| POST | `/ocorrencias/{id}/foto` | Envia a foto (JPG, PNG ou WEBP, até 8 MB; exige a `chave`) |
+| GET | `/ocorrencias/{id}/foto` | Devolve a foto (exige a `chave` de quem registrou ou o `token` da equipe) |
 
 Exemplo de criação:
 

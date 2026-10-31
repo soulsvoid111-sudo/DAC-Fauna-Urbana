@@ -1,5 +1,8 @@
+import hashlib
+import hmac
 import logging
 import os
+import secrets
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -7,12 +10,12 @@ from enum import Enum
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
-from auth import Admin, criar_token, verificar_login
+from auth import Admin, criar_token, ler_token, verificar_login
 from database.connection import aplicar_schema, get_connection
 from repository import OcorrenciaRepository
 
@@ -102,6 +105,20 @@ class Ocorrencia(BaseModel):
     data_registro: datetime
 
 
+class OcorrenciaCriada(Ocorrencia):
+    # Entregue uma única vez, para o celular de quem registrou. O servidor guarda só o hash.
+    chave: str
+
+
+class ItemAcompanhamento(BaseModel):
+    id: int
+    chave: str = Field(min_length=10, max_length=100)
+
+
+class Acompanhamento(BaseModel):
+    itens: list[ItemAcompanhamento] = Field(max_length=200)
+
+
 class StatusUpdate(BaseModel):
     status: StatusOcorrencia
 
@@ -167,10 +184,21 @@ def _ou_404(ocorrencia: dict | None) -> dict:
 
 
 # ---------- Rotas ----------
+# Quem registra só envia e acompanha os PRÓPRIOS registros (com a chave guardada no celular).
+# Ver todas as ocorrências, mudar status e apagar é só para a equipe (login do painel).
+
+
+def _hash(chave: str) -> str:
+    return hashlib.sha256(chave.encode()).hexdigest()
+
+
+def _chave_confere(chave: str | None, chave_hash: str | None) -> bool:
+    return bool(chave and chave_hash) and hmac.compare_digest(_hash(chave), chave_hash)
+
 
 @app.get("/")
 def root():
-    return {"message": "Fauna Urbana API funcionando!"}
+    return {"message": "SOFUR API funcionando!"}
 
 
 @app.get("/db-test")
@@ -180,17 +208,27 @@ def db_test():
         return {"database": "conectado", "resultado": cursor.fetchone()["resultado"]}
 
 
-@app.post("/ocorrencias", response_model=Ocorrencia, status_code=status.HTTP_201_CREATED)
+@app.post("/ocorrencias", response_model=OcorrenciaCriada, status_code=status.HTTP_201_CREATED)
 def criar_ocorrencia(ocorrencia: OcorrenciaCreate, repo: Repo):
-    return repo.criar(ocorrencia.model_dump(mode="json"))
+    chave = secrets.token_urlsafe(24)
+    criada = repo.criar({**ocorrencia.model_dump(mode="json"), "chave_hash": _hash(chave)})
+    return {**criada, "chave": chave}
+
+
+@app.post("/ocorrencias/acompanhar", response_model=list[Ocorrencia])
+def acompanhar(dados: Acompanhamento, repo: Repo):
+    """Situação atual dos registros de quem tem as chaves (tela "Meus registros")."""
+    chaves = {item.id: item.chave for item in dados.itens}
+    return [o for o in repo.buscar_com_chaves(list(chaves)) if _chave_confere(chaves.get(o["id"]), o["chave_hash"])]
 
 
 @app.get("/ocorrencias", response_model=list[Ocorrencia])
 def listar_ocorrencias(
     repo: Repo,
+    _: Admin,
     tipo: TipoOcorrencia | None = None,
     status_filtro: Annotated[StatusOcorrencia | None, Query(alias="status")] = None,
-    limite: Annotated[int, Query(ge=1, le=1000)] = 200,
+    limite: Annotated[int, Query(ge=1, le=1000)] = 500,
 ):
     return repo.listar(
         tipo=tipo.value if tipo else None,
@@ -200,12 +238,12 @@ def listar_ocorrencias(
 
 
 @app.get("/ocorrencias/resumo", response_model=Resumo)
-def resumo_ocorrencias(repo: Repo):
+def resumo_ocorrencias(repo: Repo, _: Admin):
     return repo.resumo()
 
 
 @app.get("/ocorrencias/{id}", response_model=Ocorrencia)
-def buscar_ocorrencia(id: int, repo: Repo):
+def buscar_ocorrencia(id: int, repo: Repo, _: Admin):
     return _ou_404(repo.buscar(id))
 
 
@@ -238,9 +276,13 @@ def estatisticas(repo: Repo, _: Admin, dias: Annotated[int, Query(ge=1, le=365)]
     return repo.estatisticas(dias)
 
 
+# ---------- Fotos ----------
+
 @app.post("/ocorrencias/{id}/foto", response_model=Ocorrencia)
-async def enviar_foto(id: int, repo: Repo, foto: UploadFile = File(...)):
+async def enviar_foto(id: int, repo: Repo, foto: UploadFile = File(...), chave: str = Form(...)):
     _ou_404(repo.buscar(id))
+    if not _chave_confere(chave, repo.chave_hash(id)):
+        raise HTTPException(status_code=403, detail="Só quem registrou a ocorrência pode enviar a foto.")
 
     if foto.content_type not in TIPOS_FOTO:
         raise HTTPException(status_code=415, detail="Envie uma imagem JPG, PNG ou WEBP.")
@@ -255,12 +297,16 @@ async def enviar_foto(id: int, repo: Repo, foto: UploadFile = File(...)):
 
 
 @app.get("/ocorrencias/{id}/foto")
-def baixar_foto(id: int, repo: Repo):
+def baixar_foto(id: int, repo: Repo, chave: str | None = None, token: str | None = None):
+    """A foto só abre para quem registrou (chave) ou para a equipe (token do painel)."""
+    admin = bool(token) and ler_token(token) is not None
+    if not admin and not _chave_confere(chave, repo.chave_hash(id)):
+        raise HTTPException(status_code=403, detail="Sem permissão para ver esta foto.")
     foto = repo.buscar_foto(id)
     if foto is None:
         raise HTTPException(status_code=404, detail="Esta ocorrência não tem foto")
     return Response(
         content=bytes(foto["conteudo"]),
         media_type=foto["tipo"],
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": "private, max-age=86400"},
     )

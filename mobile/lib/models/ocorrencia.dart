@@ -6,7 +6,7 @@ import 'package:latlong2/latlong.dart';
 enum TipoOcorrencia {
   avistamento('Avistamento', Icons.visibility_outlined, Color(0xFF2E7D57)),
   ferido('Animal ferido', Icons.healing_outlined, Color(0xFFC0392B)),
-  atropelado('Atropelamento', Icons.car_crash_outlined, Color(0xFF8E3B2F)),
+  atropelado('Atropelado ou morto', Icons.car_crash_outlined, Color(0xFF8E3B2F)),
   emRisco('Em risco', Icons.warning_amber_rounded, Color(0xFFD0791E)),
   emImovel('Dentro de imóvel', Icons.home_outlined, Color(0xFF2D6CA8));
 
@@ -55,8 +55,6 @@ class Ocorrencia {
     required this.dataRegistro,
     this.especie,
     this.fotoUrl,
-    this.fotoBytes,
-    this.demo = false,
   });
 
   final int id;
@@ -68,15 +66,12 @@ class Ocorrencia {
   final DateTime? dataRegistro;
   final String? especie;
 
-  /// Caminho devolvido pela API (ex.: /uploads/1_abc.jpg).
+  /// Caminho devolvido pela API (ex.: /ocorrencias/1/foto?v=abc). Para abrir, a API
+  /// exige a chave de quem registrou ou o token do painel.
   final String? fotoUrl;
 
-  /// Foto guardada só na memória (modo demonstração).
-  final Uint8List? fotoBytes;
-  final bool demo;
-
   LatLng get ponto => LatLng(latitude, longitude);
-  String get codigo => demo ? 'D$id' : '$id';
+  String get codigo => '$id';
   String get titulo => especie ?? tipo.rotulo;
 
   factory Ocorrencia.fromJson(Map<String, dynamic> json) => Ocorrencia(
@@ -91,18 +86,30 @@ class Ocorrencia {
         dataRegistro: DateTime.tryParse(json['data_registro']?.toString() ?? ''),
       );
 
-  Ocorrencia copyWith({StatusOcorrencia? status, String? fotoUrl, Uint8List? fotoBytes}) => Ocorrencia(
-        id: id,
-        latitude: latitude,
-        longitude: longitude,
-        situacao: situacao,
-        tipo: tipo,
-        especie: especie,
-        dataRegistro: dataRegistro,
-        demo: demo,
-        status: status ?? this.status,
-        fotoUrl: fotoUrl ?? this.fotoUrl,
-        fotoBytes: fotoBytes ?? this.fotoBytes,
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'latitude': latitude,
+        'longitude': longitude,
+        'situacao': situacao,
+        'tipo': tipo.valorApi,
+        'status': status.valorApi,
+        'especie': especie,
+        'foto_url': fotoUrl,
+        'data_registro': dataRegistro?.toUtc().toIso8601String(),
+      };
+}
+
+/// Um registro feito neste aparelho: a ocorrência + a chave que permite acompanhá-la.
+class MeuRegistro {
+  MeuRegistro({required this.ocorrencia, required this.chave});
+  final Ocorrencia ocorrencia;
+  final String chave;
+
+  Map<String, dynamic> toJson() => {'ocorrencia': ocorrencia.toJson(), 'chave': chave};
+
+  factory MeuRegistro.fromJson(Map<String, dynamic> json) => MeuRegistro(
+        ocorrencia: Ocorrencia.fromJson(Map<String, dynamic>.from(json['ocorrencia'] as Map)),
+        chave: json['chave'] as String,
       );
 }
 

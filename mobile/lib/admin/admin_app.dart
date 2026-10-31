@@ -52,6 +52,35 @@ class AdminHome extends StatefulWidget {
 class _AdminHomeState extends State<AdminHome> {
   int _aba = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_avisarNovas);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_avisarNovas);
+    super.dispose();
+  }
+
+  /// Quando chega ocorrência nova na atualização automática, avisa a equipe na tela.
+  void _avisarNovas() {
+    final novas = widget.controller.novas;
+    if (novas.isEmpty || !mounted) return;
+    widget.controller.avisoDeNovasMostrado();
+    final urgentes = novas.where((o) => o.tipo.urgente).length;
+    final texto = novas.length == 1
+        ? 'Nova ocorrência recebida: #${novas.first.codigo} • ${novas.first.tipo.rotulo}'
+        : '${novas.length} novas ocorrências recebidas${urgentes > 0 ? ' ($urgentes urgente(s))' : ''}';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(texto),
+      duration: const Duration(seconds: 8),
+      backgroundColor: urgentes > 0 ? const Color(0xFF8C1D18) : null,
+      action: SnackBarAction(label: 'Ver', textColor: Colors.white, onPressed: () => setState(() => _aba = 1)),
+    ));
+  }
+
   static const _destinos = [
     (Icons.space_dashboard_outlined, Icons.space_dashboard, 'Painel'),
     (Icons.list_alt_outlined, Icons.list_alt, 'Ocorrências'),

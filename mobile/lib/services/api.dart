@@ -22,19 +22,26 @@ class FaunaApi {
 
   final http.Client _client;
   final String baseUrl;
-  static const _timeout = Duration(seconds: 20);
 
-  String urlFoto(String caminho) => caminho.startsWith('http') ? caminho : '$baseUrl$caminho';
+  /// Tempo maior porque o servidor gratuito pode levar até 1 minuto para "acordar".
+  static const _timeout = Duration(seconds: 90);
 
-  /// [timeout] maior serve para esperar o servidor gratuito "acordar".
-  Future<List<Ocorrencia>> listar({Duration timeout = _timeout}) async {
-    final resposta = await _client.get(Uri.parse('$baseUrl/ocorrencias')).timeout(timeout);
-    _verificar(resposta);
-    final lista = jsonDecode(utf8.decode(resposta.bodyBytes)) as List<dynamic>;
-    return lista.map((item) => Ocorrencia.fromJson(Map<String, dynamic>.from(item as Map))).toList();
+  /// Endereço da foto já com a permissão: a chave (de quem registrou) ou o token (da equipe).
+  String? urlFoto(Ocorrencia o, {String? chave, String? token}) {
+    final caminho = o.fotoUrl;
+    if (caminho == null) return null;
+    final uri = Uri.parse(caminho.startsWith('http') ? caminho : '$baseUrl$caminho');
+    return uri.replace(queryParameters: {
+      ...uri.queryParameters,
+      'chave': ?chave,
+      'token': ?token,
+    }).toString();
   }
 
-  Future<Ocorrencia> criar(NovaOcorrencia nova) async {
+  // ---------- Quem registra ----------
+
+  /// Envia a ocorrência e devolve o registro + a chave para acompanhar depois.
+  Future<MeuRegistro> registrar(NovaOcorrencia nova) async {
     final resposta = await _client
         .post(
           Uri.parse('$baseUrl/ocorrencias'),
@@ -43,22 +50,39 @@ class FaunaApi {
         )
         .timeout(_timeout);
     _verificar(resposta);
-    return _ler(resposta);
+    final json = _json(resposta) as Map<String, dynamic>;
+    return MeuRegistro(ocorrencia: Ocorrencia.fromJson(json), chave: json['chave'] as String);
   }
 
-  Future<Ocorrencia> enviarFoto(int id, Uint8List bytes, String nome) async {
+  Future<Ocorrencia> enviarFoto(int id, String chave, Uint8List bytes, String nome) async {
     final requisicao = http.MultipartRequest('POST', Uri.parse('$baseUrl/ocorrencias/$id/foto'))
+      ..fields['chave'] = chave
       ..files.add(http.MultipartFile.fromBytes('foto', bytes, filename: nome, contentType: _tipoImagem(nome)));
-    final resposta = await http.Response.fromStream(await _client.send(requisicao).timeout(const Duration(seconds: 60)));
+    final resposta = await http.Response.fromStream(await _client.send(requisicao).timeout(_timeout));
     _verificar(resposta);
-    return _ler(resposta);
+    return Ocorrencia.fromJson(_json(resposta) as Map<String, dynamic>);
+  }
+
+  /// Situação atual dos registros feitos neste aparelho.
+  Future<List<Ocorrencia>> acompanhar(List<MeuRegistro> meus) async {
+    if (meus.isEmpty) return [];
+    final resposta = await _client
+        .post(
+          Uri.parse('$baseUrl/ocorrencias/acompanhar'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'itens': [for (final m in meus) {'id': m.ocorrencia.id, 'chave': m.chave}],
+          }),
+        )
+        .timeout(_timeout);
+    _verificar(resposta);
+    return [for (final item in _json(resposta) as List) Ocorrencia.fromJson(Map<String, dynamic>.from(item as Map))];
   }
 
   // ---------- Painel administrativo ----------
 
   Map<String, String> _auth(String token) => {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
 
-  /// Devolve o token de acesso do admin.
   Future<String> login(String usuario, String senha) async {
     final resposta = await _client
         .post(
@@ -66,22 +90,28 @@ class FaunaApi {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'usuario': usuario, 'senha': senha}),
         )
-        .timeout(const Duration(seconds: 90));
+        .timeout(_timeout);
     _verificar(resposta);
-    return (jsonDecode(utf8.decode(resposta.bodyBytes)) as Map)['token'] as String;
+    return (_json(resposta) as Map)['token'] as String;
   }
 
   Future<String> quemSou(String token) async {
-    final resposta = await _client.get(Uri.parse('$baseUrl/admin/me'), headers: _auth(token)).timeout(const Duration(seconds: 90));
+    final resposta = await _client.get(Uri.parse('$baseUrl/admin/me'), headers: _auth(token)).timeout(_timeout);
     _verificar(resposta);
-    return (jsonDecode(utf8.decode(resposta.bodyBytes)) as Map)['usuario'] as String;
+    return (_json(resposta) as Map)['usuario'] as String;
+  }
+
+  Future<List<Ocorrencia>> listar(String token) async {
+    final resposta = await _client.get(Uri.parse('$baseUrl/ocorrencias'), headers: _auth(token)).timeout(_timeout);
+    _verificar(resposta);
+    return [for (final item in _json(resposta) as List) Ocorrencia.fromJson(Map<String, dynamic>.from(item as Map))];
   }
 
   Future<Estatisticas> estatisticas(String token) async {
     final resposta =
         await _client.get(Uri.parse('$baseUrl/admin/estatisticas'), headers: _auth(token)).timeout(_timeout);
     _verificar(resposta);
-    return Estatisticas.fromJson(jsonDecode(utf8.decode(resposta.bodyBytes)) as Map<String, dynamic>);
+    return Estatisticas.fromJson(_json(resposta) as Map<String, dynamic>);
   }
 
   Future<Ocorrencia> atualizarStatus(int id, StatusOcorrencia status, String token) async {
@@ -93,7 +123,7 @@ class FaunaApi {
         )
         .timeout(_timeout);
     _verificar(resposta);
-    return _ler(resposta);
+    return Ocorrencia.fromJson(_json(resposta) as Map<String, dynamic>);
   }
 
   Future<void> apagar(int id, String token) async {
@@ -101,14 +131,15 @@ class FaunaApi {
     _verificar(resposta);
   }
 
-  Ocorrencia _ler(http.Response resposta) =>
-      Ocorrencia.fromJson(jsonDecode(utf8.decode(resposta.bodyBytes)) as Map<String, dynamic>);
+  // ---------- Utilitários ----------
+
+  dynamic _json(http.Response resposta) => jsonDecode(utf8.decode(resposta.bodyBytes));
 
   void _verificar(http.Response resposta) {
     if (resposta.statusCode >= 200 && resposta.statusCode < 300) return;
-    String mensagem = 'A API respondeu com erro ${resposta.statusCode}.';
+    String mensagem = 'O servidor respondeu com erro ${resposta.statusCode}.';
     try {
-      final detalhe = (jsonDecode(utf8.decode(resposta.bodyBytes)) as Map)['detail'];
+      final detalhe = (_json(resposta) as Map)['detail'];
       if (detalhe is String) mensagem = detalhe;
       if (detalhe is List && detalhe.isNotEmpty) mensagem = 'Dados inválidos: ${(detalhe.first as Map)['msg']}';
     } catch (_) {}

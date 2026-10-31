@@ -16,6 +16,8 @@ ALTER TABLE ocorrencias ADD COLUMN IF NOT EXISTS tipo     VARCHAR(30)  NOT NULL 
 ALTER TABLE ocorrencias ADD COLUMN IF NOT EXISTS especie  VARCHAR(100);
 ALTER TABLE ocorrencias ADD COLUMN IF NOT EXISTS status   VARCHAR(20)  NOT NULL DEFAULT 'aberta';
 ALTER TABLE ocorrencias ADD COLUMN IF NOT EXISTS foto_url VARCHAR(255);
+-- Hash da chave de acompanhamento: só quem registrou (com a chave no celular) consulta o próprio registro.
+ALTER TABLE ocorrencias ADD COLUMN IF NOT EXISTS chave_hash VARCHAR(64);
 
 DO $$
 BEGIN

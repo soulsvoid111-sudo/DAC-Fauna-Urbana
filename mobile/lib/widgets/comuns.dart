@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/ocorrencia.dart';
-import '../services/api.dart';
+import '../services/ocorrencias_controller.dart';
 import '../theme.dart';
 
 class Etiqueta extends StatelessWidget {
@@ -38,11 +38,11 @@ class IconeTipo extends StatelessWidget {
       );
 }
 
-/// Mostra a foto da ocorrência (da API ou da memória) ou o ícone do tipo.
+/// Mostra a foto da ocorrência (endereço já com permissão) ou o ícone do tipo.
 class FotoOcorrencia extends StatelessWidget {
-  const FotoOcorrencia({super.key, required this.ocorrencia, required this.api, this.altura = 180});
+  const FotoOcorrencia({super.key, required this.ocorrencia, required this.url, this.altura = 180});
   final Ocorrencia ocorrencia;
-  final FaunaApi api;
+  final String? url;
   final double altura;
 
   @override
@@ -52,47 +52,38 @@ class FotoOcorrencia extends StatelessWidget {
       color: ocorrencia.tipo.cor.withValues(alpha: 0.08),
       child: Center(child: Icon(ocorrencia.tipo.icone, color: ocorrencia.tipo.cor.withValues(alpha: 0.5), size: 44)),
     );
-    if (ocorrencia.fotoBytes != null) {
-      return Image.memory(ocorrencia.fotoBytes!, height: altura, width: double.infinity, fit: BoxFit.cover);
-    }
-    if (ocorrencia.fotoUrl != null) {
-      return Image.network(
-        api.urlFoto(ocorrencia.fotoUrl!),
-        height: altura,
-        width: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => semFoto,
-      );
-    }
-    return semFoto;
+    if (url == null) return semFoto;
+    return Image.network(url!, height: altura, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, _, _) => semFoto);
   }
 }
 
-class AvisoDemo extends StatelessWidget {
-  const AvisoDemo({super.key, required this.mensagem});
-  final String? mensagem;
+/// Filtro por tipo de ocorrência (painel da equipe).
+class FiltroTipos extends StatelessWidget {
+  const FiltroTipos({super.key, required this.controller, this.fundoBranco = false});
+  final OcorrenciasController controller;
+  final bool fundoBranco;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: warnBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: warnBorder),
-        ),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Icon(Icons.science_outlined, color: warnInk),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Modo demonstração', style: TextStyle(color: warnInk, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(
-                '${mensagem ?? 'Os dados exibidos são fictícios.'} Nada do que for registrado agora vai para o banco.',
-                style: const TextStyle(color: warnInk, fontSize: 12, height: 1.4),
+  Widget build(BuildContext context) => SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final tipo in TipoOcorrencia.values)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterChip(
+                  avatar: Icon(tipo.icone, size: 16, color: tipo.cor),
+                  label: Text('${tipo.rotulo} (${controller.contar(tipo)})'),
+                  selected: controller.filtro == tipo,
+                  showCheckmark: false,
+                  backgroundColor: fundoBranco ? Colors.white : null,
+                  selectedColor: tipo.cor.withValues(alpha: 0.16),
+                  side: BorderSide(color: controller.filtro == tipo ? tipo.cor : border),
+                  onSelected: (_) => controller.filtrar(tipo),
+                ),
               ),
-            ]),
-          ),
-        ]),
+          ],
+        ),
       );
 }

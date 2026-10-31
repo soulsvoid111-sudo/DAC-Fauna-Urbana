@@ -2,25 +2,23 @@ import 'package:flutter/material.dart';
 
 import 'admin/admin_app.dart';
 import 'config.dart';
-
-import 'screens/lista_screen.dart';
-import 'screens/mapa_screen.dart';
+import 'screens/inicio_screen.dart';
 import 'screens/registro_screen.dart';
-import 'services/ocorrencias_controller.dart';
+import 'services/meus_registros_controller.dart';
 import 'theme.dart';
 
-void main() => runApp(FaunaUrbanaApp(controller: OcorrenciasController()));
+void main() => runApp(SofurApp(controller: MeusRegistrosController()));
 
-class FaunaUrbanaApp extends StatelessWidget {
-  const FaunaUrbanaApp({super.key, required this.controller});
-  final OcorrenciasController controller;
+class SofurApp extends StatelessWidget {
+  const SofurApp({super.key, required this.controller});
+  final MeusRegistrosController controller;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
         title: '$nomeApp • $nomeCompleto',
         theme: buildTheme(),
-        // Painel administrativo: https://<site>/#/admin
+        // Quem registra usa "/". O painel da equipe fica em https://<site>/#/admin
         initialRoute: '/',
         routes: {
           '/': (_) => HomeShell(controller: controller),
@@ -31,15 +29,13 @@ class FaunaUrbanaApp extends StatelessWidget {
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.controller});
-  final OcorrenciasController controller;
+  final MeusRegistrosController controller;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
-  int _aba = 0;
-
   @override
   void initState() {
     super.initState();
@@ -67,32 +63,21 @@ class _HomeShellState extends State<HomeShell> {
             ListenableBuilder(
               listenable: widget.controller,
               builder: (_, _) => IconButton(
-                tooltip: 'Atualizar',
-                onPressed: widget.controller.carregando ? null : widget.controller.carregar,
+                tooltip: 'Atualizar meus registros',
+                onPressed: widget.controller.carregando ? null : widget.controller.atualizarSituacao,
                 icon: const Icon(Icons.refresh_rounded),
               ),
             ),
             const SizedBox(width: 4),
           ],
         ),
-        body: IndexedStack(index: _aba, children: [
-          ListaScreen(controller: widget.controller, onRegistrar: _registrar),
-          MapaScreen(controller: widget.controller),
-        ]),
+        body: InicioScreen(controller: widget.controller, onRegistrar: _registrar),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _registrar,
           backgroundColor: forest,
           foregroundColor: Colors.white,
           icon: const Icon(Icons.add_a_photo_outlined),
           label: const Text('Registrar'),
-        ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _aba,
-          onDestinationSelected: (i) => setState(() => _aba = i),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.list_alt_outlined), selectedIcon: Icon(Icons.list_alt), label: 'Registros'),
-            NavigationDestination(icon: Icon(Icons.map_outlined), selectedIcon: Icon(Icons.map), label: 'Mapa'),
-          ],
         ),
       );
 }

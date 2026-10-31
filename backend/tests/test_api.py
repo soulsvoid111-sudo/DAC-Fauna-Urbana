@@ -37,7 +37,14 @@ class RepositorioEmMemoria:
         return sorted(itens, key=lambda i: i["data_registro"], reverse=True)[:limite]
 
     def buscar(self, id):
-        return self.itens.get(id)
+        item = self.itens.get(id)
+        return {k: v for k, v in item.items() if k != "chave_hash"} if item else None
+
+    def chave_hash(self, id):
+        return self.itens[id]["chave_hash"] if id in self.itens else None
+
+    def buscar_com_chaves(self, ids):
+        return [dict(self.itens[i]) for i in ids if i in self.itens]
 
     def atualizar(self, id, campo, valor):
         if id not in self.itens:
@@ -104,14 +111,17 @@ def client():
 VALIDA = {"latitude": -20.4697, "longitude": -54.6201, "situacao": "Capivara perto do lago", "tipo": "avistamento"}
 
 
-def test_cria_e_busca_ocorrencia(client):
+def test_cria_e_admin_consulta(client):
     resposta = client.post("/ocorrencias", json={**VALIDA, "especie": "  Capivara "})
     assert resposta.status_code == 201
     criada = resposta.json()
     assert criada["especie"] == "Capivara"
     assert criada["status"] == "aberta"
+    assert len(criada["chave"]) >= 20, "quem registra recebe a chave de acompanhamento"
+    assert "chave_hash" not in criada
 
-    assert client.get(f"/ocorrencias/{criada['id']}").json()["situacao"] == "Capivara perto do lago"
+    h = cabecalho_admin(client)
+    assert client.get(f"/ocorrencias/{criada['id']}", headers=h).json()["situacao"] == "Capivara perto do lago"
 
 
 def test_tipo_padrao_e_avistamento(client):
@@ -134,7 +144,7 @@ def test_rejeita_dados_invalidos(client, alteracao):
 
 
 def test_ocorrencia_inexistente_retorna_404(client):
-    assert client.get("/ocorrencias/999").status_code == 404
+    assert client.get("/ocorrencias/999", headers=cabecalho_admin(client)).status_code == 404
     assert (
         client.patch("/ocorrencias/999/status", json={"status": "resolvida"}, headers=cabecalho_admin(client)).status_code
         == 404
@@ -142,32 +152,38 @@ def test_ocorrencia_inexistente_retorna_404(client):
 
 
 def test_filtra_por_tipo_e_status(client):
+    h = cabecalho_admin(client)
     client.post("/ocorrencias", json=VALIDA)
     ferido = client.post("/ocorrencias", json={**VALIDA, "tipo": "ferido"}).json()
-    client.patch(f"/ocorrencias/{ferido['id']}/status", json={"status": "em_analise"}, headers=cabecalho_admin(client))
+    client.patch(f"/ocorrencias/{ferido['id']}/status", json={"status": "em_analise"}, headers=h)
 
-    assert [o["id"] for o in client.get("/ocorrencias?tipo=ferido").json()] == [ferido["id"]]
-    assert [o["id"] for o in client.get("/ocorrencias?status=em_analise").json()] == [ferido["id"]]
-    assert client.get("/ocorrencias/resumo").json()["por_tipo"] == {"avistamento": 1, "ferido": 1}
+    assert [o["id"] for o in client.get("/ocorrencias?tipo=ferido", headers=h).json()] == [ferido["id"]]
+    assert [o["id"] for o in client.get("/ocorrencias?status=em_analise", headers=h).json()] == [ferido["id"]]
+    assert client.get("/ocorrencias/resumo", headers=h).json()["por_tipo"] == {"avistamento": 1, "ferido": 1}
 
 
 def test_envia_e_baixa_foto(client):
     criada = client.post("/ocorrencias", json=VALIDA).json()
-    assert client.get(f"/ocorrencias/{criada['id']}/foto").status_code == 404
+    chave = criada["chave"]
+    assert client.get(f"/ocorrencias/{criada['id']}/foto", params={"chave": chave}).status_code == 404
 
     jpeg = b"\xff\xd8\xff fake jpeg"
     resposta = client.post(
         f"/ocorrencias/{criada['id']}/foto",
         files={"foto": ("bicho.jpg", jpeg, "image/jpeg")},
+        data={"chave": chave},
     )
     assert resposta.status_code == 200
     foto_url = resposta.json()["foto_url"]
     assert foto_url.startswith(f"/ocorrencias/{criada['id']}/foto?v=")
 
-    baixada = client.get(foto_url)
+    baixada = client.get(foto_url, params={"chave": chave})
     assert baixada.status_code == 200
     assert baixada.headers["content-type"] == "image/jpeg"
     assert baixada.content == jpeg
+
+    token = login(client).json()["token"]
+    assert client.get(foto_url, params={"token": token}).content == jpeg, "a equipe também vê a foto"
 
 
 def test_recusa_arquivo_que_nao_e_imagem(client):
@@ -175,6 +191,7 @@ def test_recusa_arquivo_que_nao_e_imagem(client):
     resposta = client.post(
         f"/ocorrencias/{criada['id']}/foto",
         files={"foto": ("virus.exe", b"MZ...", "application/octet-stream")},
+        data={"chave": criada["chave"]},
     )
     assert resposta.status_code == 415
 
@@ -184,7 +201,7 @@ def test_banco_fora_do_ar_retorna_503(client):
         raise psycopg.OperationalError("sem conexão")
 
     main.app.dependency_overrides[main.get_repository] = quebra
-    resposta = client.get("/ocorrencias")
+    resposta = client.post("/ocorrencias", json=VALIDA)
     assert resposta.status_code == 503
     assert "indisponível" in resposta.json()["detail"]
 
@@ -236,7 +253,7 @@ def test_admin_muda_status_apaga_e_ve_estatisticas(client):
     assert est["top_especies"] == [{"especie": "Quati", "total": 1}]
 
     assert client.delete(f"/ocorrencias/{b['id']}", headers=h).status_code == 204
-    assert client.get(f"/ocorrencias/{b['id']}").status_code == 404
+    assert client.get(f"/ocorrencias/{b['id']}", headers=h).status_code == 404
     assert client.delete(f"/ocorrencias/{b['id']}", headers=h).status_code == 404
 
 
@@ -250,3 +267,51 @@ def test_hash_de_senha():
     assert auth.senha_confere("abc", h)
     assert not auth.senha_confere("abd", h)
     assert not auth.senha_confere("abc", "lixo")
+
+
+# ---------- Privacidade: cada pessoa só vê o que registrou ----------
+
+
+def test_visitante_nao_ve_ocorrencias_de_ninguem(client):
+    client.post("/ocorrencias", json=VALIDA)
+    assert client.get("/ocorrencias").status_code == 401
+    assert client.get("/ocorrencias/1").status_code == 401
+    assert client.get("/ocorrencias/resumo").status_code == 401
+
+
+def test_acompanha_so_os_proprios_registros(client):
+    minha = client.post("/ocorrencias", json=VALIDA).json()
+    de_outra_pessoa = client.post("/ocorrencias", json={**VALIDA, "situacao": "Registro de outra pessoa"}).json()
+
+    resposta = client.post(
+        "/ocorrencias/acompanhar",
+        json={"itens": [
+            {"id": minha["id"], "chave": minha["chave"]},
+            {"id": de_outra_pessoa["id"], "chave": "chave-chutada-errada-123"},
+            {"id": 999, "chave": "nao-existe-1234567"},
+        ]},
+    )
+    assert resposta.status_code == 200
+    assert [o["id"] for o in resposta.json()] == [minha["id"]]
+    assert "chave_hash" not in resposta.json()[0]
+
+
+def test_acompanhamento_mostra_status_atualizado_pela_equipe(client):
+    minha = client.post("/ocorrencias", json={**VALIDA, "tipo": "ferido"}).json()
+    client.patch(f"/ocorrencias/{minha['id']}/status", json={"status": "resolvida"}, headers=cabecalho_admin(client))
+    itens = client.post("/ocorrencias/acompanhar", json={"itens": [{"id": minha["id"], "chave": minha["chave"]}]}).json()
+    assert itens[0]["status"] == "resolvida"
+
+
+def test_foto_de_outra_pessoa_e_bloqueada(client):
+    a = client.post("/ocorrencias", json=VALIDA).json()
+    b = client.post("/ocorrencias", json=VALIDA).json()
+    jpeg = b"\xff\xd8\xff"
+    # B não consegue colocar foto no registro de A
+    assert client.post(f"/ocorrencias/{a['id']}/foto", files={"foto": ("x.jpg", jpeg, "image/jpeg")},
+                       data={"chave": b["chave"]}).status_code == 403
+    client.post(f"/ocorrencias/{a['id']}/foto", files={"foto": ("x.jpg", jpeg, "image/jpeg")}, data={"chave": a["chave"]})
+    # ...nem ver a foto de A
+    assert client.get(f"/ocorrencias/{a['id']}/foto", params={"chave": b["chave"]}).status_code == 403
+    assert client.get(f"/ocorrencias/{a['id']}/foto").status_code == 403
+    assert client.get(f"/ocorrencias/{a['id']}/foto", params={"token": "falso.falso"}).status_code == 403
