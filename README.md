@@ -155,6 +155,24 @@ flutter test
 > No celular físico, `127.0.0.1` aponta para o próprio celular. Use o IP do computador onde a API está rodando.
 > No Windows, gerar o app Android exige ativar o **Modo de Desenvolvedor** (Configurações → Para desenvolvedores).
 
+### 7.4 Publicação (Render + Neon)
+
+* **Banco:** PostgreSQL no [Neon](https://neon.tech). Copie a *connection string* (com `sslmode=require`).
+* **API:** *Web Service* no [Render](https://render.com), com:
+  * pasta raiz `backend`;
+  * build `pip install -r requirements.txt`;
+  * start `uvicorn main:app --host 0.0.0.0 --port $PORT`;
+  * variável `DATABASE_URL` com a connection string do Neon.
+
+  As tabelas são criadas sozinhas quando a API inicia.
+* **App (site):** *Static Site* no Render, com:
+  * pasta raiz `mobile`;
+  * build `bash build_web.sh`;
+  * pasta publicada `build/web`;
+  * variável `API_URL` com o endereço da API (ex.: `https://fauna-urbana-api.onrender.com`).
+* **Manter a API acordada:** o plano gratuito desliga a API após 15 min sem uso. O workflow `.github/workflows/manter-api-acordada.yml` chama a API a cada 10 min. Para ativar, crie a variável `API_URL` em *Settings → Secrets and variables → Actions → Variables*.
+* **Fotos:** ficam guardadas no próprio banco (tabela `fotos`), porque o disco do plano gratuito é apagado a cada reinício.
+
 ---
 
 ## 8. Estrutura do projeto
@@ -193,6 +211,7 @@ DAC-Fauna-Urbana/
 | GET | `/ocorrencias/{id}` | Busca uma ocorrência (**404** se não existir) |
 | PATCH | `/ocorrencias/{id}/status` | Altera o status |
 | POST | `/ocorrencias/{id}/foto` | Envia a foto (JPG, PNG ou WEBP, até 8 MB) |
+| GET | `/ocorrencias/{id}/foto` | Devolve a foto |
 
 Exemplo de criação:
 
@@ -221,7 +240,7 @@ ocorrencias
 ├── tipo           avistamento | ferido | atropelado | em_risco | em_imovel
 ├── especie        texto opcional
 ├── status         aberta | em_analise | resolvida | descartada
-├── foto_url       caminho da foto
+├── foto_url       endereço da foto (o arquivo fica na tabela fotos)
 └── data_registro  TIMESTAMPTZ
 ```
 

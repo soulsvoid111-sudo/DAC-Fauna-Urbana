@@ -4,7 +4,7 @@ import '../data/demo.dart';
 import '../models/ocorrencia.dart';
 import 'api.dart';
 
-enum ResultadoRegistro { salvoNoBanco, salvoNaDemo }
+enum ResultadoRegistro { salvoNoBanco, salvoSemFoto, salvoNaDemo }
 
 /// Guarda as ocorrências carregadas e decide quando usar o modo demonstração.
 class OcorrenciasController extends ChangeNotifier {
@@ -13,6 +13,9 @@ class OcorrenciasController extends ChangeNotifier {
   final FaunaApi api;
   List<Ocorrencia> _todas = [];
   bool carregando = false;
+
+  /// Verdadeiro enquanto espera o servidor gratuito sair do modo "dormindo".
+  bool acordandoServidor = false;
   bool modoDemonstracao = false;
   String? aviso;
   TipoOcorrencia? filtro;
@@ -33,14 +36,24 @@ class OcorrenciasController extends ChangeNotifier {
     carregando = true;
     notifyListeners();
     try {
-      _todas = await api.listar();
+      try {
+        _todas = await api.listar(timeout: const Duration(seconds: 10));
+      } on ApiException {
+        rethrow;
+      } catch (_) {
+        // Servidor provavelmente dormindo: a hospedagem segura a requisição até ele acordar.
+        acordandoServidor = true;
+        notifyListeners();
+        _todas = await api.listar(timeout: const Duration(seconds: 90));
+      }
       modoDemonstracao = false;
       aviso = null;
     } on ApiException catch (e) {
       _entrarNaDemo(e.mensagem);
     } catch (_) {
-      _entrarNaDemo('Não foi possível conectar à API. Os registros abaixo são fictícios.');
+      _entrarNaDemo('Não foi possível conectar ao servidor. Os registros abaixo são fictícios.');
     }
+    acordandoServidor = false;
     carregando = false;
     notifyListeners();
   }
@@ -50,10 +63,19 @@ class OcorrenciasController extends ChangeNotifier {
   Future<ResultadoRegistro> registrar(NovaOcorrencia nova) async {
     if (!modoDemonstracao) {
       try {
-        final criada = await api.criar(nova);
+        var criada = await api.criar(nova);
+        var resultado = ResultadoRegistro.salvoNoBanco;
+        if (nova.foto != null) {
+          // O registro já foi salvo; se só a foto falhar, não perde nem duplica o registro.
+          try {
+            criada = await api.enviarFoto(criada.id, nova.foto!, nova.nomeFoto ?? 'foto.jpg');
+          } catch (_) {
+            resultado = ResultadoRegistro.salvoSemFoto;
+          }
+        }
         _todas = [criada, ..._todas];
         notifyListeners();
-        return ResultadoRegistro.salvoNoBanco;
+        return resultado;
       } on ApiException {
         rethrow;
       } catch (_) {

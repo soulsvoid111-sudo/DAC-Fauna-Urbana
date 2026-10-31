@@ -44,7 +44,7 @@ class OcorrenciaRepository:
             return cursor.fetchone()
 
     def atualizar(self, id: int, campo: str, valor) -> dict | None:
-        if campo not in ("status", "foto_url"):
+        if campo != "status":
             raise ValueError(f"Campo não permitido: {campo}")
         with self.connection.cursor() as cursor:
             cursor.execute(
@@ -54,6 +54,28 @@ class OcorrenciaRepository:
             resultado = cursor.fetchone()
         self.connection.commit()
         return resultado
+
+    def salvar_foto(self, id: int, conteudo: bytes, tipo: str, foto_url: str) -> dict | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO fotos (ocorrencia_id, conteudo, tipo) VALUES (%s, %s, %s)
+                ON CONFLICT (ocorrencia_id) DO UPDATE SET conteudo = EXCLUDED.conteudo, tipo = EXCLUDED.tipo, criado_em = NOW();
+                """,
+                (id, conteudo, tipo),
+            )
+            cursor.execute(
+                f"UPDATE ocorrencias SET foto_url = %s WHERE id = %s RETURNING {COLUNAS};",
+                (foto_url, id),
+            )
+            resultado = cursor.fetchone()
+        self.connection.commit()
+        return resultado
+
+    def buscar_foto(self, id: int) -> dict | None:
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT conteudo, tipo FROM fotos WHERE ocorrencia_id = %s;", (id,))
+            return cursor.fetchone()
 
     def resumo(self) -> dict:
         with self.connection.cursor() as cursor:

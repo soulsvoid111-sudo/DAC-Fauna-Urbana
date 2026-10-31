@@ -15,6 +15,7 @@ class RepositorioEmMemoria:
     def __init__(self):
         self.itens: dict[int, dict] = {}
         self.proximo_id = 1
+        self.fotos: dict[int, dict] = {}
 
     def criar(self, dados):
         item = {
@@ -41,6 +42,13 @@ class RepositorioEmMemoria:
         self.itens[id][campo] = valor
         return self.itens[id]
 
+    def salvar_foto(self, id, conteudo, tipo, foto_url):
+        self.fotos[id] = {"conteudo": conteudo, "tipo": tipo}
+        return self.atualizar(id, "foto_url", foto_url)
+
+    def buscar_foto(self, id):
+        return self.fotos.get(id)
+
     def resumo(self):
         por_tipo, por_status = {}, {}
         for i in self.itens.values():
@@ -50,9 +58,8 @@ class RepositorioEmMemoria:
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
+def client():
     repo = RepositorioEmMemoria()
-    monkeypatch.setattr(main, "PASTA_UPLOADS", tmp_path)
     main.app.dependency_overrides[main.get_repository] = lambda: repo
     yield TestClient(main.app)
     main.app.dependency_overrides.clear()
@@ -105,15 +112,23 @@ def test_filtra_por_tipo_e_status(client):
     assert client.get("/ocorrencias/resumo").json()["por_tipo"] == {"avistamento": 1, "ferido": 1}
 
 
-def test_envia_foto(client, tmp_path):
+def test_envia_e_baixa_foto(client):
     criada = client.post("/ocorrencias", json=VALIDA).json()
+    assert client.get(f"/ocorrencias/{criada['id']}/foto").status_code == 404
+
+    jpeg = b"\xff\xd8\xff fake jpeg"
     resposta = client.post(
         f"/ocorrencias/{criada['id']}/foto",
-        files={"foto": ("bicho.jpg", b"\xff\xd8\xff fake jpeg", "image/jpeg")},
+        files={"foto": ("bicho.jpg", jpeg, "image/jpeg")},
     )
     assert resposta.status_code == 200
-    assert resposta.json()["foto_url"].startswith(f"/uploads/{criada['id']}_")
-    assert len(list(tmp_path.iterdir())) == 1
+    foto_url = resposta.json()["foto_url"]
+    assert foto_url.startswith(f"/ocorrencias/{criada['id']}/foto?v=")
+
+    baixada = client.get(foto_url)
+    assert baixada.status_code == 200
+    assert baixada.headers["content-type"] == "image/jpeg"
+    assert baixada.content == jpeg
 
 
 def test_recusa_arquivo_que_nao_e_imagem(client):

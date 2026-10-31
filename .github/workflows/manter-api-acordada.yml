@@ -1,0 +1,18 @@
+# O plano gratuito do Render desliga a API após 15 min sem uso, e ela leva
+# até 1 minuto para voltar. Este robô chama a API a cada 10 minutos para
+# mantê-la sempre pronta. Defina a variável do repositório API_URL
+# (Settings → Secrets and variables → Actions → Variables).
+name: Manter API acordada
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    if: ${{ vars.API_URL != '' }}
+    steps:
+      - name: Chamar a API
+        run: curl --fail --silent --show-error --max-time 90 --retry 2 "${{ vars.API_URL }}/" 

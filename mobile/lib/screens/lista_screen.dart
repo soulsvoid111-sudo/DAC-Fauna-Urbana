@@ -36,11 +36,8 @@ class ListaScreen extends StatelessWidget {
                     const SizedBox(height: 10),
                     FiltroTipos(controller: c),
                     const SizedBox(height: 14),
-                    if (c.carregando && c.todas.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(30),
-                        child: Center(child: CircularProgressIndicator(color: forest)),
-                      )
+                    if (c.carregando && (c.todas.isEmpty || c.acordandoServidor))
+                      _Carregando(acordando: c.acordandoServidor)
                     else if (itens.isEmpty)
                       _Vazio(filtrando: c.filtro != null, onRegistrar: onRegistrar)
                     else
@@ -248,5 +245,26 @@ class _Vazio extends StatelessWidget {
             ),
           ]),
         ),
+      );
+}
+
+class _Carregando extends StatelessWidget {
+  const _Carregando({required this.acordando});
+  final bool acordando;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 12),
+        child: Column(children: [
+          const CircularProgressIndicator(color: forest),
+          if (acordando) ...[
+            const SizedBox(height: 16),
+            const Text('Conectando ao servidor...',
+                style: TextStyle(color: ink, fontWeight: FontWeight.w700, fontSize: 15)),
+            const SizedBox(height: 4),
+            const Text('Na primeira vez pode levar até 1 minuto.',
+                textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 12)),
+          ],
+        ]),
       );
 }
