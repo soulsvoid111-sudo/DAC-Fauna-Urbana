@@ -5,6 +5,7 @@ import '../services/meus_registros_controller.dart';
 import '../theme.dart';
 import '../widgets/comuns.dart';
 import '../widgets/detalhe_sheet.dart';
+import 'instalar_screen.dart';
 
 /// Tela inicial de quem registra: botão para avisar a equipe e os registros feitos neste aparelho.
 class InicioScreen extends StatelessWidget {
@@ -29,6 +30,8 @@ class InicioScreen extends StatelessWidget {
                     _Chamada(onRegistrar: onRegistrar),
                     const SizedBox(height: 16),
                     const _ComoFunciona(),
+                    const SizedBox(height: 12),
+                    const _CartaoInstalar(),
                     const SizedBox(height: 24),
                     Row(children: [
                       const Expanded(
@@ -210,6 +213,39 @@ class _Vazio extends StatelessWidget {
               label: const Text('Registrar ocorrência'),
             ),
           ]),
+        ),
+      );
+}
+
+/// Convite para instalar o SOFUR na tela inicial do celular.
+class _CartaoInstalar extends StatelessWidget {
+  const _CartaoInstalar();
+
+  @override
+  Widget build(BuildContext context) => Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const InstalarScreen())),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset('assets/icone_app.png', width: 46, height: 46),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Instale o SOFUR no celular',
+                      style: TextStyle(color: ink, fontWeight: FontWeight.w800, fontSize: 15)),
+                  SizedBox(height: 2),
+                  Text('Passo a passo para Android e iPhone (Chrome e Safari).',
+                      style: TextStyle(color: muted, fontSize: 12, height: 1.3)),
+                ]),
+              ),
+              const Icon(Icons.chevron_right, color: forest),
+            ]),
+          ),
         ),
       );
 }
