@@ -1,30 +1,83 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:mobile/main.dart';
+import 'package:mobile/models/ocorrencia.dart';
+import 'package:mobile/services/api.dart';
+import 'package:mobile/services/ocorrencias_controller.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('converte o JSON da API em ocorrência', () {
+    final o = Ocorrencia.fromJson({
+      'id': 7,
+      'latitude': -20.47,
+      'longitude': -54.62,
+      'situacao': 'Quati ferido',
+      'tipo': 'em_risco',
+      'status': 'em_analise',
+      'especie': 'Quati',
+      'foto_url': null,
+      'data_registro': '2026-10-22T09:15:00Z',
+    });
+    expect(o.tipo, TipoOcorrencia.emRisco);
+    expect(o.status, StatusOcorrencia.emAnalise);
+    expect(o.titulo, 'Quati');
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('sem API, entra no modo demonstração e registra só na memória', () async {
+    final api = FaunaApi(client: MockClient((_) async => throw http.ClientException('offline')));
+    final controller = OcorrenciasController(api: api);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    await controller.carregar();
+    expect(controller.modoDemonstracao, isTrue);
+    final antes = controller.todas.length;
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    final resultado = await controller.registrar(NovaOcorrencia(
+      ponto: const LatLng(-20.47, -54.62),
+      situacao: 'Capivara no parque',
+      tipo: TipoOcorrencia.avistamento,
+    ));
+    expect(resultado, ResultadoRegistro.salvoNaDemo);
+    expect(controller.todas.length, antes + 1);
+  });
+
+  test('erro de validação da API é repassado, sem cair na demonstração', () async {
+    final api = FaunaApi(
+      client: MockClient((req) async => req.method == 'GET'
+          ? http.Response('[]', 200)
+          : http.Response('{"detail":"Latitude inválida"}', 422)),
+    );
+    final controller = OcorrenciasController(api: api);
+    await controller.carregar();
+
+    await expectLater(
+      controller.registrar(NovaOcorrencia(
+        ponto: const LatLng(85, 0),
+        situacao: 'teste',
+        tipo: TipoOcorrencia.ferido,
+      )),
+      throwsA(isA<ApiException>()),
+    );
+    expect(controller.modoDemonstracao, isFalse);
+  });
+
+  testWidgets('tela inicial mostra registros e as abas', (tester) async {
+    final api = FaunaApi(
+      client: MockClient((_) async => http.Response(
+            '[{"id":1,"latitude":-20.47,"longitude":-54.62,"situacao":"Arara na praça","tipo":"avistamento",'
+            '"status":"aberta","especie":"Arara-canindé","foto_url":null,"data_registro":"2026-10-22T09:15:00Z"}]',
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          )),
+    );
+    await tester.pumpWidget(FaunaUrbanaApp(controller: OcorrenciasController(api: api)));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Arara-canindé'), findsOneWidget);
+    expect(find.text('Registros'), findsOneWidget);
+    expect(find.text('Mapa'), findsOneWidget);
+    expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
   });
 }

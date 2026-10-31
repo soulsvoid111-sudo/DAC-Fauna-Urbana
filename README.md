@@ -77,271 +77,190 @@ A identificação por inteligência artificial será utilizada como recurso de a
 
 ## 5. Estado atual do protótipo
 
-A primeira prova de conceito do projeto já foi implementada e validada em um dispositivo Android físico.
+O sistema já permite:
 
-Atualmente o sistema permite:
-
-* executar a aplicação Flutter em um smartphone;
-* realizar comunicação entre o aplicativo e a API;
-* registrar uma ocorrência pelo aplicativo;
-* enviar os dados para o backend;
-* armazenar a ocorrência no PostgreSQL;
-* consultar as ocorrências armazenadas;
-* exibir as ocorrências novamente no aplicativo.
+* registrar uma ocorrência com **tipo** (avistamento, animal ferido, atropelamento, em risco, dentro de imóvel), **espécie** (com sugestões de espécies comuns em MS), descrição e **foto**;
+* obter a localização pelo **GPS** do aparelho ou marcar o ponto tocando no **mapa**;
+* ver as ocorrências em **lista** (com filtros por tipo) e no **mapa** (marcadores coloridos por tipo);
+* abrir os detalhes de uma ocorrência e acompanhar o **status** (aberta, em análise, resolvida, descartada);
+* ver orientação de emergência (190 / 193) quando o animal está ferido ou em risco;
+* usar o app em **modo demonstração** quando a API está fora do ar, com aviso claro de que nada vai para o banco.
 
 ### Fluxo atualmente funcional
 
 ```text
-Flutter
-   ↓
-POST /ocorrencias
-   ↓
-FastAPI
-   ↓
-INSERT
-   ↓
-PostgreSQL
-   ↓
-GET /ocorrencias
-   ↓
-Flutter
+Flutter ── POST /ocorrencias ──────────► FastAPI ── INSERT ──► PostgreSQL
+        ── POST /ocorrencias/{id}/foto ►         ── salva em backend/uploads/
+        ◄─ GET  /ocorrencias ───────────         ◄─ SELECT ──
 ```
-
-A prova de conceito foi validada utilizando ocorrências de teste.
 
 ---
 
 ## 6. Tecnologias
 
-### Mobile
-
-* Flutter
-* Dart
-
-### Backend
-
-* Python
-* FastAPI
-* Uvicorn
-
-### Banco de dados
-
-* PostgreSQL
-
-### Desenvolvimento
-
-* Visual Studio Code
-* Git
-* GitHub
+* **Mobile:** Flutter, Dart, flutter_map (OpenStreetMap), geolocator, image_picker
+* **Backend:** Python, FastAPI, Uvicorn, psycopg
+* **Banco de dados:** PostgreSQL
+* **Testes:** pytest (API) e flutter_test (app)
 
 ---
 
-## 7. Estrutura do projeto
+## 7. Como rodar
+
+### 7.1 Banco de dados
+
+Com o PostgreSQL instalado, crie o usuário e o banco (uma vez só):
+
+```sql
+CREATE USER fauna_app WITH PASSWORD 'escolha-uma-senha';
+CREATE DATABASE fauna_urbana OWNER fauna_app;
+```
+
+Depois crie ou atualize a tabela (pode rodar de novo sem perder dados):
+
+```bash
+psql -U fauna_app -d fauna_urbana -f backend/database/schema.sql
+```
+
+### 7.2 API
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate          # Windows  (Linux/Mac: source .venv/bin/activate)
+pip install -r requirements-dev.txt
+copy .env.example .env          # e coloque a senha do banco no .env
+uvicorn main:app --reload --host 0.0.0.0
+```
+
+A documentação interativa da API fica em http://127.0.0.1:8000/docs.
+
+Testes da API (não precisam do PostgreSQL):
+
+```bash
+python -m pytest
+```
+
+### 7.3 Aplicativo
+
+```bash
+cd mobile
+flutter pub get
+flutter run -d chrome                                            # navegador
+flutter run --dart-define=API_URL=http://192.168.0.10:8000       # celular físico (IP do PC na mesma rede)
+flutter run --dart-define=API_URL=http://10.0.2.2:8000           # emulador Android
+flutter test
+```
+
+> No celular físico, `127.0.0.1` aponta para o próprio celular. Use o IP do computador onde a API está rodando.
+> No Windows, gerar o app Android exige ativar o **Modo de Desenvolvedor** (Configurações → Para desenvolvedores).
+
+---
+
+## 8. Estrutura do projeto
 
 ```text
 DAC-Fauna-Urbana/
-│
-├── mobile/
-│   └── Aplicação Flutter
-│
 ├── backend/
 │   ├── database/
-│   │   └── connection.py
-│   ├── main.py
-│   ├── test_db.py
-│   └── requirements.txt
-│
-├── admin/
-│   └── Interface administrativa
-│
-├── docs/
-│   └── Documentação do projeto
-│
-└── README.md
+│   │   ├── connection.py     # conexão (lê o .env)
+│   │   └── schema.sql        # criação/atualização da tabela
+│   ├── tests/test_api.py     # testes da API
+│   ├── main.py               # rotas e validação
+│   ├── repository.py         # todo o SQL
+│   └── .env.example
+└── mobile/lib/
+    ├── main.dart             # app e navegação (Registros / Mapa)
+    ├── config.dart           # endereço da API e centro do mapa
+    ├── models/               # Ocorrencia, tipos e status
+    ├── services/             # chamadas HTTP e estado da lista
+    ├── screens/              # lista, mapa e formulário de registro
+    ├── widgets/              # componentes e tela de detalhes
+    └── data/                 # espécies sugeridas e dados de demonstração
 ```
 
 ---
 
-## 8. API atualmente implementada
+## 9. API
 
-### `GET /`
+| Método | Rota | O que faz |
+|---|---|---|
+| GET | `/` | Verifica se a API está no ar |
+| GET | `/db-test` | Testa a conexão com o PostgreSQL |
+| POST | `/ocorrencias` | Cria uma ocorrência (responde **201**) |
+| GET | `/ocorrencias?tipo=&status=&limite=` | Lista, com filtros opcionais |
+| GET | `/ocorrencias/resumo` | Totais por tipo e por status |
+| GET | `/ocorrencias/{id}` | Busca uma ocorrência (**404** se não existir) |
+| PATCH | `/ocorrencias/{id}/status` | Altera o status |
+| POST | `/ocorrencias/{id}/foto` | Envia a foto (JPG, PNG ou WEBP, até 8 MB) |
 
-Verifica se a API está funcionando.
-
-### `GET /db-test`
-
-Testa a comunicação entre a API e o PostgreSQL.
-
-### `POST /ocorrencias`
-
-Registra uma nova ocorrência.
-
-Exemplo:
+Exemplo de criação:
 
 ```json
 {
   "latitude": -20.4697,
   "longitude": -54.6201,
-  "situacao": "Animal encontrado próximo à via"
+  "situacao": "Quati mancando perto do estacionamento",
+  "tipo": "ferido",
+  "especie": "Quati"
 }
 ```
 
-### `GET /ocorrencias`
-
-Retorna as ocorrências registradas.
-
-### `GET /ocorrencias/{id}`
-
-Consulta uma ocorrência específica pelo seu identificador.
+A API valida os dados (latitude entre -90 e 90, longitude entre -180 e 180, descrição de 3 a 500 caracteres, tipo da lista) e responde **422** quando algo está errado. Se o banco estiver fora do ar, responde **503** com uma mensagem clara.
 
 ---
 
-## 9. Banco de dados
-
-O protótipo utiliza PostgreSQL.
-
-A estrutura inicial da tabela de ocorrências contém:
+## 10. Banco de dados
 
 ```text
 ocorrencias
-├── id
-├── latitude
-├── longitude
-├── situacao
-└── data_registro
-```
-
-A estrutura poderá ser expandida conforme novas funcionalidades forem implementadas.
-
----
-
-## 10. Arquitetura inicial
-
-A arquitetura atual separa a aplicação mobile, a API e o banco de dados.
-
-```text
-                 ┌─────────────────┐
-                 │     Flutter     │
-                 │     Mobile      │
-                 └────────┬────────┘
-                          │
-                       HTTP/JSON
-                          │
-                          ▼
-                 ┌─────────────────┐
-                 │     FastAPI     │
-                 │     Backend     │
-                 └────────┬────────┘
-                          │
-                          │ SQL
-                          ▼
-                 ┌─────────────────┐
-                 │   PostgreSQL    │
-                 │    Database     │
-                 └─────────────────┘
+├── id             SERIAL
+├── latitude       DOUBLE PRECISION
+├── longitude      DOUBLE PRECISION
+├── situacao       TEXT
+├── tipo           avistamento | ferido | atropelado | em_risco | em_imovel
+├── especie        texto opcional
+├── status         aberta | em_analise | resolvida | descartada
+├── foto_url       caminho da foto
+└── data_registro  TIMESTAMPTZ
 ```
 
 ---
 
-## 11. Funcionalidades planejadas
+## 11. Próximas etapas
 
-O projeto será desenvolvido de forma incremental.
-
-### Próximas funcionalidades
-
-* obtenção da localização por GPS;
-* visualização das ocorrências em mapa;
-* registro de fotografias;
-* armazenamento das imagens;
-* autenticação de usuários;
-* controle de permissões;
-* interface administrativa;
-* filtros das ocorrências;
-* alteração e gerenciamento do status das ocorrências.
-
-### Funcionalidades futuras
-
-* sugestão de espécie utilizando inteligência artificial;
-* validação humana da identificação;
-* identificação de áreas com maior concentração de ocorrências;
-* indicadores e estatísticas;
-* expansão da solução para outros contextos e localidades.
+* autenticação de usuários e permissão para alterar status só para administradores;
+* painel administrativo web;
+* mapa de calor das áreas com mais ocorrências (ex.: trechos com atropelamentos);
+* sugestão de espécie por inteligência artificial, com validação humana;
+* servidor de mapas próprio ou pago antes de uso em larga escala (os tiles públicos do OpenStreetMap têm limite de uso);
+* política de privacidade (LGPD), já que o app guarda a localização de quem registra.
 
 ---
 
-## 12. Limitações da versão atual
+## 12. Status
 
-A versão apresentada nesta etapa é uma prova de conceito inicial.
-
-Ainda não estão implementados:
-
-* GPS automático;
-* mapa;
-* câmera;
-* autenticação;
-* armazenamento de imagens;
-* inteligência artificial;
-* painel administrativo completo.
-
-Essas funcionalidades fazem parte das próximas etapas de desenvolvimento do projeto.
-
----
-
-## 13. Próximas etapas
-
-O desenvolvimento seguirá de forma incremental, priorizando o fluxo principal do sistema.
-
-```text
-POC inicial
-    ↓
-GPS e localização
-    ↓
-Registro com fotografia
-    ↓
-Mapa
-    ↓
-Autenticação
-    ↓
-Área administrativa
-    ↓
-Testes e validação
-    ↓
-Recursos de IA e indicadores
-```
-
----
-
-## 14. Status
-
-**Pré-entrega 2 — 25/09/2026**
-
-Estado atual:
-
-* [x] Estrutura inicial do projeto
-* [x] Ambiente de desenvolvimento
-* [x] Aplicação Flutter
-* [x] API FastAPI
-* [x] PostgreSQL
-* [x] Comunicação Flutter → API
-* [x] Registro de ocorrência
-* [x] Persistência no banco
-* [x] Consulta de ocorrências
-* [ ] GPS
-* [ ] Mapa
-* [ ] Fotografia
+* [x] Estrutura inicial, Flutter, FastAPI e PostgreSQL
+* [x] Registro e consulta de ocorrências
+* [x] Tipo da ocorrência e espécie
+* [x] GPS
+* [x] Mapa
+* [x] Fotografia
+* [x] Status das ocorrências e filtros
+* [x] Testes automatizados (API e app)
 * [ ] Autenticação
 * [ ] Área administrativa
 * [ ] Inteligência artificial
 
 ---
 
-## 15. Equipe
+## 13. Equipe
 
 Projeto desenvolvido por estudantes do curso de Análise e Desenvolvimento de Sistemas — UCDB.
 
 ---
 
-## 16. Documentação
+## 14. Documentação
 
 A documentação técnica detalhada do projeto será apresentada no Relatório Técnico da DAC.
 
