@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,16 +8,18 @@ import '../models/ocorrencia.dart';
 import 'api.dart';
 import 'ocorrencias_controller.dart';
 
-/// Estado do painel administrativo: login, estatísticas e ações sobre as ocorrências.
+/// Estado do painel administrativo: login, ocorrências recebidas, estatísticas e ações.
 class AdminController extends ChangeNotifier {
-  AdminController({FaunaApi? api, OcorrenciasController? ocorrencias})
-      : api = api ?? FaunaApi(),
-        ocorrencias = ocorrencias ?? OcorrenciasController(api: api);
+  AdminController({FaunaApi? api, this.intervaloAtualizacao = const Duration(seconds: 60)})
+      : api = api ?? FaunaApi() {
+    ocorrencias.urlFoto = (o) => this.api.urlFoto(o, token: _token);
+  }
 
   static const _chaveToken = 'fauna_admin_token';
 
   final FaunaApi api;
-  final OcorrenciasController ocorrencias;
+  final OcorrenciasController ocorrencias = OcorrenciasController();
+  final Duration intervaloAtualizacao;
 
   String? _token;
   String? usuario;
@@ -23,6 +27,12 @@ class AdminController extends ChangeNotifier {
   bool iniciando = true;
   bool carregando = false;
   String? erro;
+  DateTime? ultimaAtualizacao;
+
+  /// Ocorrências que chegaram desde a última atualização (para avisar a equipe).
+  List<Ocorrencia> novas = [];
+  final Set<int> _conhecidas = {};
+  Timer? _timer;
 
   /// Filtros da lista do painel.
   String busca = '';
@@ -30,10 +40,14 @@ class AdminController extends ChangeNotifier {
 
   bool get logado => _token != null;
 
+  /// Casos que pedem ação rápida e ainda não foram atendidos, mais recentes primeiro.
+  List<Ocorrencia> get urgentesAbertas => ocorrencias.todas
+      .where((o) => o.tipo.urgente && o.status == StatusOcorrencia.aberta)
+      .toList();
+
   List<Ocorrencia> get filtradas {
     final termo = busca.trim().toLowerCase();
     return ocorrencias.visiveis.where((o) {
-      if (o.demo) return false;
       if (filtroStatus != null && o.status != filtroStatus) return false;
       if (termo.isEmpty) return true;
       return o.situacao.toLowerCase().contains(termo) ||
@@ -41,6 +55,8 @@ class AdminController extends ChangeNotifier {
           o.codigo == termo.replaceAll('#', '');
     }).toList();
   }
+
+  String? urlFoto(Ocorrencia o) => api.urlFoto(o, token: _token);
 
   /// Recupera o login salvo no aparelho, se ainda for válido.
   Future<void> iniciar() async {
@@ -51,6 +67,7 @@ class AdminController extends ChangeNotifier {
         usuario = await api.quemSou(salvo);
         _token = salvo;
         await carregar();
+        _iniciarAtualizacaoAutomatica();
       }
     } on ApiException catch (e) {
       if (e.naoAutorizado) await _esquecerToken();
@@ -75,6 +92,7 @@ class AdminController extends ChangeNotifier {
         await prefs.setString(_chaveToken, token);
       } catch (_) {}
       await carregar();
+      _iniciarAtualizacaoAutomatica();
     } on ApiException catch (e) {
       erro = e.mensagem;
     } catch (_) {
@@ -85,30 +103,48 @@ class AdminController extends ChangeNotifier {
   }
 
   Future<void> sair() async {
+    _timer?.cancel();
     await _esquecerToken();
     usuario = null;
     estatisticas = null;
+    ocorrencias.definir([]);
+    _conhecidas.clear();
     notifyListeners();
   }
 
-  Future<void> carregar() async {
+  /// Busca ocorrências e estatísticas. Em [silencioso], não mostra carregamento (atualização automática).
+  Future<void> carregar({bool silencioso = false}) async {
     final token = _token;
     if (token == null) return;
-    carregando = true;
-    erro = null;
-    notifyListeners();
+    if (!silencioso) {
+      carregando = true;
+      erro = null;
+      notifyListeners();
+    }
     try {
-      final resultados = await Future.wait([api.estatisticas(token), ocorrencias.carregar()]);
-      estatisticas = resultados.first as Estatisticas;
-    } on ApiException catch (e) {
-      if (e.naoAutorizado) return _sessaoExpirada();
-      erro = e.mensagem;
+      final (lista, est) = await (api.listar(token), api.estatisticas(token)).wait;
+      final primeiraVez = _conhecidas.isEmpty && ultimaAtualizacao == null;
+      novas = primeiraVez ? [] : lista.where((o) => !_conhecidas.contains(o.id)).toList();
+      _conhecidas
+        ..clear()
+        ..addAll(lista.map((o) => o.id));
+      ocorrencias.definir(lista);
+      estatisticas = est;
+      ultimaAtualizacao = DateTime.now();
+      erro = null;
+    } on ParallelWaitError catch (e) {
+      final primeiro = (e.errors as (AsyncError?, AsyncError?)).$1?.error ?? e.errors.$2?.error;
+      if (primeiro is ApiException && primeiro.naoAutorizado) return _sessaoExpirada();
+      if (!silencioso) erro = primeiro is ApiException ? primeiro.mensagem : 'Não foi possível atualizar os dados agora.';
     } catch (_) {
-      erro = 'Não foi possível atualizar os dados agora.';
+      if (!silencioso) erro = 'Não foi possível atualizar os dados agora.';
     }
     carregando = false;
     notifyListeners();
   }
+
+  /// A tela chama depois de mostrar o aviso das novas ocorrências.
+  void avisoDeNovasMostrado() => novas = [];
 
   void filtrarStatus(StatusOcorrencia? status) {
     filtroStatus = filtroStatus == status ? null : status;
@@ -127,6 +163,7 @@ class AdminController extends ChangeNotifier {
   Future<String?> apagar(Ocorrencia o) => _executar(() async {
         await api.apagar(o.id, _token!);
         ocorrencias.remover(o);
+        _conhecidas.remove(o.id);
       });
 
   Future<String?> _executar(Future<void> Function() acao) async {
@@ -134,6 +171,7 @@ class AdminController extends ChangeNotifier {
     try {
       await acao();
       _atualizarEstatisticasEmSegundoPlano();
+      notifyListeners();
       return null;
     } on ApiException catch (e) {
       if (e.naoAutorizado) {
@@ -146,6 +184,11 @@ class AdminController extends ChangeNotifier {
     }
   }
 
+  void _iniciarAtualizacaoAutomatica() {
+    _timer?.cancel();
+    _timer = Timer.periodic(intervaloAtualizacao, (_) => carregar(silencioso: true));
+  }
+
   Future<void> _atualizarEstatisticasEmSegundoPlano() async {
     try {
       estatisticas = await api.estatisticas(_token!);
@@ -154,6 +197,7 @@ class AdminController extends ChangeNotifier {
   }
 
   Future<void> _sessaoExpirada() async {
+    _timer?.cancel();
     await _esquecerToken();
     erro = 'Sua sessão expirou. Entre novamente.';
     carregando = false;
@@ -166,5 +210,11 @@ class AdminController extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_chaveToken);
     } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
   }
 }

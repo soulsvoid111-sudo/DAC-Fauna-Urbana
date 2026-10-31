@@ -27,11 +27,11 @@ MockClient _api({bool tokenExpira = false}) => MockClient((req) async {
             ? _json('{"token":"tok","usuario":"DAC@FAUNA"}', 200)
             : _json('{"detail":"Usuário ou senha incorretos."}', 401);
       }
-      if (path == '/ocorrencias' && req.method == 'GET') return _json('[$_ocorrencia]', 200);
       if (auth != 'Bearer tok') return _json('{"detail":"Faça login"}', 401);
       if (path == '/admin/me') return _json('{"usuario":"DAC@FAUNA"}', 200);
       if (tokenExpira) return _json('{"detail":"Faça login"}', 401);
       if (path == '/admin/estatisticas') return _json(_estatisticas, 200);
+      if (path == '/ocorrencias' && req.method == 'GET') return _json('[$_ocorrencia]', 200);
       if (path.endsWith('/status')) return _json(_ocorrencia.replaceFirst('"aberta"', '"resolvida"'), 200);
       if (req.method == 'DELETE') return http.Response('', 204);
       return _json('{}', 404);
@@ -41,7 +41,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('login certo carrega painel e lembra a sessão', () async {
-    final c = AdminController(api: FaunaApi(client: _api()));
+    final c = AdminController(api: FaunaApi(client: _api()), intervaloAtualizacao: const Duration(hours: 1));
     await c.iniciar();
     expect(c.logado, isFalse);
 
@@ -50,21 +50,24 @@ void main() {
     expect(c.usuario, 'DAC@FAUNA');
     expect(c.estatisticas!.urgentesAbertas, 1);
     expect(c.estatisticas!.topEspecies.first.$1, 'Quati');
+    expect(c.urgentesAbertas.map((o) => o.id), [1]);
+    expect(c.urlFoto(c.filtradas.single), isNull, reason: 'sem foto, sem endereço');
+    c.dispose();
 
-    final outro = AdminController(api: FaunaApi(client: _api()));
+    final outro = AdminController(api: FaunaApi(client: _api()), intervaloAtualizacao: const Duration(hours: 1));
     await outro.iniciar();
     expect(outro.logado, isTrue, reason: 'o token salvo deve ser reaproveitado');
   });
 
   test('senha errada mostra a mensagem da API', () async {
-    final c = AdminController(api: FaunaApi(client: _api()));
+    final c = AdminController(api: FaunaApi(client: _api()), intervaloAtualizacao: const Duration(hours: 1));
     await c.entrar('DAC@FAUNA', 'errada');
     expect(c.logado, isFalse);
     expect(c.erro, 'Usuário ou senha incorretos.');
   });
 
   test('muda status e apaga, atualizando a lista', () async {
-    final c = AdminController(api: FaunaApi(client: _api()));
+    final c = AdminController(api: FaunaApi(client: _api()), intervaloAtualizacao: const Duration(hours: 1));
     await c.entrar('DAC@FAUNA', 'certa');
     final o = c.filtradas.single;
 
@@ -76,7 +79,7 @@ void main() {
   });
 
   test('sessão expirada volta para o login', () async {
-    final c = AdminController(api: FaunaApi(client: _api(tokenExpira: true)));
+    final c = AdminController(api: FaunaApi(client: _api(tokenExpira: true)), intervaloAtualizacao: const Duration(hours: 1));
     await c.entrar('DAC@FAUNA', 'certa');
     expect(c.logado, isFalse);
     expect(c.erro, contains('expirou'));

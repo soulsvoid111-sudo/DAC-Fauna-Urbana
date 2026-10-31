@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,105 +9,115 @@ import 'package:latlong2/latlong.dart';
 import 'package:mobile/main.dart';
 import 'package:mobile/models/ocorrencia.dart';
 import 'package:mobile/services/api.dart';
-import 'package:mobile/services/ocorrencias_controller.dart';
+import 'package:mobile/services/meus_registros_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  test('converte o JSON da API em ocorrência', () {
-    final o = Ocorrencia.fromJson({
-      'id': 7,
+http.Response _json(Object corpo, int status) => http.Response.bytes(
+      utf8.encode(jsonEncode(corpo)),
+      status,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+
+Map<String, dynamic> _ocorrencia(int id, {String status = 'aberta', String? foto}) => {
+      'id': id,
       'latitude': -20.47,
       'longitude': -54.62,
-      'situacao': 'Quati ferido',
-      'tipo': 'em_risco',
-      'status': 'em_analise',
+      'situacao': 'Quati ferido no estacionamento',
+      'tipo': 'ferido',
+      'status': status,
       'especie': 'Quati',
-      'foto_url': null,
-      'data_registro': '2026-10-22T09:15:00Z',
+      'foto_url': foto,
+      'data_registro': '2026-10-30T10:00:00Z',
+    };
+
+/// API falsa de quem registra: cria com chave, aceita foto e responde o acompanhamento.
+MockClient _apiCidadao({bool fotoFalha = false, String statusAtual = 'aberta'}) => MockClient((req) async {
+      final caminho = req.url.path;
+      if (caminho == '/ocorrencias' && req.method == 'POST') {
+        return _json({..._ocorrencia(7), 'chave': 'chave-secreta-do-celular'}, 201);
+      }
+      if (caminho.endsWith('/foto')) {
+        if (fotoFalha) throw http.ClientException('caiu no meio');
+        return _json(_ocorrencia(7, foto: '/ocorrencias/7/foto?v=1'), 200);
+      }
+      if (caminho == '/ocorrencias/acompanhar') {
+        final pedidos = (jsonDecode(req.body) as Map)['itens'] as List;
+        final certos = pedidos.where((p) => p['chave'] == 'chave-secreta-do-celular');
+        return _json([for (final p in certos) _ocorrencia(p['id'] as int, status: statusAtual)], 200);
+      }
+      return _json({'detail': 'não esperado'}, 404);
     });
-    expect(o.tipo, TipoOcorrencia.emRisco);
+
+NovaOcorrencia _nova({Uint8List? foto}) => NovaOcorrencia(
+      ponto: const LatLng(-20.47, -54.62),
+      situacao: 'Quati ferido no estacionamento',
+      tipo: TipoOcorrencia.ferido,
+      foto: foto,
+      nomeFoto: foto == null ? null : 'a.jpg',
+    );
+
+void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('converte o JSON da API e volta para JSON sem perder nada', () {
+    final o = Ocorrencia.fromJson(_ocorrencia(3, status: 'em_analise'));
+    expect(o.tipo, TipoOcorrencia.ferido);
     expect(o.status, StatusOcorrencia.emAnalise);
-    expect(o.titulo, 'Quati');
+    expect(Ocorrencia.fromJson(o.toJson()).situacao, o.situacao);
   });
 
-  test('sem API, entra no modo demonstração e registra só na memória', () async {
-    final api = FaunaApi(client: MockClient((_) async => throw http.ClientException('offline')));
-    final controller = OcorrenciasController(api: api);
+  test('envia, guarda no aparelho com a chave e mostra só os meus registros', () async {
+    final c = MeusRegistrosController(api: FaunaApi(client: _apiCidadao()));
+    await c.carregar();
+    expect(c.registros, isEmpty);
 
-    await controller.carregar();
-    expect(controller.modoDemonstracao, isTrue);
-    final antes = controller.todas.length;
+    final (registro, resultado) = await c.enviar(_nova(foto: Uint8List.fromList([1, 2, 3])));
+    expect(resultado, ResultadoEnvio.enviado);
+    expect(registro.chave, 'chave-secreta-do-celular');
+    expect(c.urlFoto(registro), contains('chave=chave-secreta-do-celular'));
 
-    final resultado = await controller.registrar(NovaOcorrencia(
-      ponto: const LatLng(-20.47, -54.62),
-      situacao: 'Capivara no parque',
-      tipo: TipoOcorrencia.avistamento,
-    ));
-    expect(resultado, ResultadoRegistro.salvoNaDemo);
-    expect(controller.todas.length, antes + 1);
+    // Abrindo o app de novo, o registro continua lá (guardado no aparelho).
+    final reaberto = MeusRegistrosController(api: FaunaApi(client: _apiCidadao(statusAtual: 'resolvida')));
+    await reaberto.carregar();
+    expect(reaberto.registros.map((r) => r.ocorrencia.id), [7]);
+    expect(reaberto.registros.single.ocorrencia.status, StatusOcorrencia.resolvida,
+        reason: 'a situação atualizada pela equipe aparece para quem registrou');
   });
 
-  test('erro de validação da API é repassado, sem cair na demonstração', () async {
-    final api = FaunaApi(
-      client: MockClient((req) async => req.method == 'GET'
-          ? http.Response('[]', 200)
-          : http.Response('{"detail":"Latitude inválida"}', 422)),
+  test('se só a foto falhar, o registro é enviado uma vez e avisa', () async {
+    final c = MeusRegistrosController(api: FaunaApi(client: _apiCidadao(fotoFalha: true)));
+    final (_, resultado) = await c.enviar(_nova(foto: Uint8List.fromList([1])));
+    expect(resultado, ResultadoEnvio.enviadoSemFoto);
+    expect(c.registros, hasLength(1));
+  });
+
+  test('sem internet, o envio falha e nada é salvo como enviado', () async {
+    final c = MeusRegistrosController(
+      api: FaunaApi(client: MockClient((_) async => throw http.ClientException('offline'))),
     );
-    final controller = OcorrenciasController(api: api);
-    await controller.carregar();
+    await expectLater(c.enviar(_nova()), throwsA(isA<http.ClientException>()));
+    expect(c.registros, isEmpty);
+  });
 
+  test('erro de validação da API chega com a mensagem', () async {
+    final c = MeusRegistrosController(
+      api: FaunaApi(client: MockClient((_) async => _json({'detail': 'Latitude inválida'}, 422))),
+    );
     await expectLater(
-      controller.registrar(NovaOcorrencia(
-        ponto: const LatLng(85, 0),
-        situacao: 'teste',
-        tipo: TipoOcorrencia.ferido,
-      )),
-      throwsA(isA<ApiException>()),
+      c.enviar(_nova()),
+      throwsA(isA<ApiException>().having((e) => e.mensagem, 'mensagem', 'Latitude inválida')),
     );
-    expect(controller.modoDemonstracao, isFalse);
   });
 
-  test('se só a foto falhar, o registro fica salvo uma vez, sem cair na demonstração', () async {
-    final api = FaunaApi(
-      client: MockClient((req) async {
-        if (req.method == 'GET') return http.Response('[]', 200);
-        if (req.url.path.endsWith('/foto')) throw http.ClientException('caiu no meio');
-        return http.Response(
-          '{"id":5,"latitude":-20.47,"longitude":-54.62,"situacao":"Arara","tipo":"avistamento",'
-          '"status":"aberta","especie":null,"foto_url":null,"data_registro":"2026-10-30T10:00:00Z"}',
-          201,
-        );
-      }),
-    );
-    final controller = OcorrenciasController(api: api);
-    await controller.carregar();
-
-    final resultado = await controller.registrar(NovaOcorrencia(
-      ponto: const LatLng(-20.47, -54.62),
-      situacao: 'Arara',
-      tipo: TipoOcorrencia.avistamento,
-      foto: Uint8List.fromList([1, 2, 3]),
-      nomeFoto: 'a.jpg',
-    ));
-    expect(resultado, ResultadoRegistro.salvoSemFoto);
-    expect(controller.modoDemonstracao, isFalse);
-    expect(controller.todas.map((o) => o.id), [5]);
-  });
-
-  testWidgets('tela inicial mostra registros e as abas', (tester) async {
-    final api = FaunaApi(
-      client: MockClient((_) async => http.Response(
-            '[{"id":1,"latitude":-20.47,"longitude":-54.62,"situacao":"Arara na praça","tipo":"avistamento",'
-            '"status":"aberta","especie":"Arara-canindé","foto_url":null,"data_registro":"2026-10-22T09:15:00Z"}]',
-            200,
-            headers: {'content-type': 'application/json; charset=utf-8'},
-          )),
-    );
-    await tester.pumpWidget(FaunaUrbanaApp(controller: OcorrenciasController(api: api)));
+  testWidgets('tela inicial pública: botão de registrar e "Meus registros", sem lista de outras pessoas',
+      (tester) async {
+    await tester.pumpWidget(SofurApp(controller: MeusRegistrosController(api: FaunaApi(client: _apiCidadao()))));
     await tester.pumpAndSettle();
 
-    expect(find.text('Arara-canindé'), findsOneWidget);
-    expect(find.text('Registros'), findsOneWidget);
-    expect(find.text('Mapa'), findsOneWidget);
-    expect(find.byIcon(Icons.cloud_done_outlined), findsOneWidget);
+    expect(find.text('Registrar ocorrência'), findsWidgets);
+    expect(find.text('Meus registros'), findsOneWidget);
+    expect(find.text('Você ainda não fez registros'), findsOneWidget);
+    expect(find.text('Mapa'), findsNothing);
+    expect(find.byIcon(Icons.add_a_photo_outlined), findsWidgets);
   });
 }

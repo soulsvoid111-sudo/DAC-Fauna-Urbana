@@ -38,38 +38,39 @@ def test_fluxo_completo_no_banco(client, monkeypatch):
 
     assert client.get("/db-test").json()["database"] == "conectado"
 
+    # Cidadão registra e recebe a chave
     resposta = client.post(
         "/ocorrencias",
-        json={
-            "latitude": -20.4697,
-            "longitude": -54.6201,
-            "situacao": "Teste automático de integração",
-            "tipo": "ferido",
-            "especie": "Quati",
-        },
+        json={"latitude": -20.4697, "longitude": -54.6201, "situacao": "Teste automático de integração",
+              "tipo": "ferido", "especie": "Quati"},
     )
     assert resposta.status_code == 201, resposta.text
     criada = resposta.json()
     client.criados.append(criada["id"])
-    assert criada["status"] == "aberta"
+    chave = criada["chave"]
 
     foto = b"\x89PNG\r\n\x1a\n teste"
-    resposta = client.post(f"/ocorrencias/{criada['id']}/foto", files={"foto": ("t.png", foto, "image/png")})
+    resposta = client.post(f"/ocorrencias/{criada['id']}/foto", files={"foto": ("t.png", foto, "image/png")},
+                           data={"chave": chave})
     assert resposta.status_code == 200, resposta.text
-    baixada = client.get(resposta.json()["foto_url"])
-    assert baixada.status_code == 200 and baixada.content == foto
+    foto_url = resposta.json()["foto_url"]
+    assert client.get(foto_url, params={"chave": chave}).content == foto
+    assert client.get(foto_url).status_code == 403
 
-    # Mudar status exige admin; aqui só conferimos que a rota está protegida.
-    assert client.patch(f"/ocorrencias/{criada['id']}/status", json={"status": "resolvida"}).status_code == 401
-    with get_connection() as conn:
-        conn.execute("UPDATE ocorrencias SET status = 'resolvida' WHERE id = %s", (criada["id"],))
+    # Visitante não vê a lista
+    assert client.get("/ocorrencias").status_code == 401
 
-    ids = [o["id"] for o in client.get("/ocorrencias?tipo=ferido&status=resolvida").json()]
-    assert criada["id"] in ids
-    assert client.get("/ocorrencias/resumo").json()["total"] >= 1
-
+    # Equipe vê tudo e muda o status
     token = client.post("/admin/login", json={"usuario": "teste", "senha": "teste-senha"}).json()["token"]
     h = {"Authorization": f"Bearer {token}"}
+    ids = [o["id"] for o in client.get("/ocorrencias?tipo=ferido", headers=h).json()]
+    assert criada["id"] in ids
+    assert client.patch(f"/ocorrencias/{criada['id']}/status", json={"status": "resolvida"}, headers=h).status_code == 200
+
+    # Cidadão acompanha e vê o status novo
+    meus = client.post("/ocorrencias/acompanhar", json={"itens": [{"id": criada["id"], "chave": chave}]}).json()
+    assert meus[0]["status"] == "resolvida"
+
     est = client.get("/admin/estatisticas", headers=h)
     assert est.status_code == 200, est.text
     assert est.json()["total"] >= 1 and len(est.json()["por_dia"]) >= 1
