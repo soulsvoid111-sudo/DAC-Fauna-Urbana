@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'admin/admin_app.dart';
+import 'config.dart';
 
 import 'screens/lista_screen.dart';
 import 'screens/mapa_screen.dart';
@@ -17,7 +18,7 @@ class FaunaUrbanaApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'Fauna Urbana',
+        title: '$nomeApp • $nomeCompleto',
         theme: buildTheme(),
         // Painel administrativo: https://<site>/#/admin
         initialRoute: '/',
@@ -54,10 +55,13 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
           titleSpacing: 16,
-          title: const Row(children: [
-            CircleAvatar(backgroundColor: pale, radius: 17, child: Icon(Icons.eco_outlined, color: forest, size: 20)),
-            SizedBox(width: 10),
-            Text('Fauna Urbana', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.4)),
+          title: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Image.asset('assets/icone_app.png', width: 34, height: 34),
+            ),
+            const SizedBox(width: 10),
+            const Text(nomeApp, style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 0.5)),
           ]),
           actions: [
             ListenableBuilder(

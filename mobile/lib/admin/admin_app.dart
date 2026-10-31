@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../config.dart';
 import '../models/ocorrencia.dart';
 import '../screens/mapa_screen.dart';
 import '../services/admin_controller.dart';
@@ -99,14 +100,13 @@ class _AdminHomeState extends State<AdminHome> {
         appBar: AppBar(
           titleSpacing: 16,
           title: Row(children: [
-            const CircleAvatar(
-              backgroundColor: pale,
-              radius: 17,
-              child: Icon(Icons.admin_panel_settings_outlined, color: forest, size: 20),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: Image.asset('assets/icone_app.png', width: 34, height: 34),
             ),
             const SizedBox(width: 10),
             Flexible(
-              child: Text(largo ? 'Fauna Urbana • Administração' : 'Administração',
+              child: Text(largo ? '$nomeApp • Administração' : 'Administração',
                   overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
             ),
           ]),

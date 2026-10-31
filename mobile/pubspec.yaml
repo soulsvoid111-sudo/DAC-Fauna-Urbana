@@ -1,5 +1,5 @@
 name: mobile
-description: "Fauna Urbana - registro de ocorrências de fauna urbana (DAC/UCDB)."
+description: "SOFUR - Sistema de Ocorrências da Fauna Urbana (DAC/UCDB)."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -53,6 +53,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -64,6 +65,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/icone_app.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -95,3 +99,17 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Ícones do app gerados a partir de marca/ (rode: dart run flutter_launcher_icons)
+flutter_launcher_icons:
+  image_path: "assets/icone.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_background: "#205C45"
+  adaptive_icon_foreground: "assets/icone_frente.png"
+  web:
+    generate: true
+    image_path: "assets/icone.png"
+    background_color: "#F5F7F3"
+    theme_color: "#205C45"

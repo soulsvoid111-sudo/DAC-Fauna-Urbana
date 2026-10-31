@@ -1,5 +1,9 @@
 import 'package:latlong2/latlong.dart';
 
+/// Nome do sistema (aparece no app, no painel e no navegador).
+const nomeApp = 'SOFUR';
+const nomeCompleto = 'Sistema de Ocorrências da Fauna Urbana';
+
 /// Endereço da API. No celular físico, `127.0.0.1` é o próprio celular, então
 /// rode com o IP do computador na mesma rede:
 ///   flutter run --dart-define=API_URL=http://192.168.0.10:8000
