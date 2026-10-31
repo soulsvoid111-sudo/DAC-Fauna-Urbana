@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../models/ocorrencia.dart';
+import '../services/meus_registros_controller.dart';
 import '../services/notificacao.dart';
 import '../theme.dart';
+import 'instalar_screen.dart';
 import 'registro_screen.dart';
 
 /// Aparece depois do envio: confirma que a equipe recebeu e mostra o protocolo.
 class ConfirmacaoScreen extends StatelessWidget {
-  const ConfirmacaoScreen({super.key, required this.registro, this.fotoNaoEnviada = false});
+  const ConfirmacaoScreen({super.key, required this.registro, required this.controller, this.fotoNaoEnviada = false});
   final MeuRegistro registro;
+  final MeusRegistrosController controller;
   final bool fotoNaoEnviada;
 
   @override
@@ -70,7 +73,7 @@ class ConfirmacaoScreen extends StatelessWidget {
                   const AvisoUrgente(depoisDoEnvio: true),
                 ],
                 const SizedBox(height: 16),
-                const _BotaoAvisar(),
+                _BotaoAvisar(registro: registro, controller: controller),
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -88,22 +91,77 @@ class ConfirmacaoScreen extends StatelessWidget {
 
 /// Pede permissão para avisar (notificação do celular) quando a equipe resolver a ocorrência.
 class _BotaoAvisar extends StatefulWidget {
-  const _BotaoAvisar();
+  const _BotaoAvisar({required this.registro, required this.controller});
+  final MeuRegistro registro;
+  final MeusRegistrosController controller;
 
   @override
   State<_BotaoAvisar> createState() => _BotaoAvisarState();
 }
 
 class _BotaoAvisarState extends State<_BotaoAvisar> {
+  // Com permissão já dada, o celular é inscrito automaticamente após o envio.
   late bool _ativado = Notificacao.permitida;
+  bool _ativando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Logo depois do envio, convida a pessoa a ativar as notificações.
+    if (!_ativado) WidgetsBinding.instance.addPostFrameCallback((_) => _convidar());
+  }
+
+  Future<void> _convidar() async {
+    if (!mounted) return;
+    final instalar = Notificacao.precisaInstalar;
+    final bloqueada = Notificacao.bloqueada;
+    if (!Notificacao.suportada && !instalar) return; // navegador sem suporte: fica só o aviso dentro do app
+    final resposta = await showDialog<bool>(
+      context: context,
+      builder: (contexto) => AlertDialog(
+        icon: const Icon(Icons.notifications_active_outlined, color: forest, size: 40),
+        title: const Text('Quer ser avisado quando sua ocorrência for resolvida?', textAlign: TextAlign.center),
+        content: Text(
+          instalar
+              ? 'No iPhone, as notificações funcionam com o SOFUR instalado na Tela de Início. Veja como instalar em 4 passos.'
+              : bloqueada
+                  ? 'As notificações do SOFUR estão bloqueadas neste navegador. Toque no cadeado ao lado do endereço, '
+                      'em Notificações escolha "Permitir" e depois toque em "Ativar" aqui de novo.'
+                  : 'Mandamos uma notificação para o seu celular assim que a equipe resolver, mesmo com o SOFUR fechado.',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(contexto, false), child: const Text('Agora não')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(contexto, true),
+            icon: Icon(instalar ? Icons.install_mobile : Icons.notifications_active),
+            label: Text(instalar ? 'Ver como instalar' : 'Ativar notificações'),
+          ),
+        ],
+      ),
+    );
+    if (resposta != true || !mounted) return;
+    if (instalar) {
+      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const InstalarScreen()));
+    } else {
+      await _ativar();
+    }
+  }
 
   Future<void> _ativar() async {
-    final ok = await Notificacao.pedirPermissao();
+    setState(() => _ativando = true);
+    final ok = await widget.controller.ativarAvisos(widget.registro);
     if (!mounted) return;
-    setState(() => _ativado = ok);
+    setState(() {
+      _ativado = ok;
+      _ativando = false;
+    });
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Sem permissão de notificação. Você ainda verá o aviso ao abrir o SOFUR.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(Notificacao.permitida
+            ? 'Não foi possível ativar as notificações agora. Você ainda verá o aviso ao abrir o SOFUR.'
+            : 'Notificações bloqueadas. Libere nas configurações do navegador para ser avisado.'),
       ));
     }
   }
@@ -111,7 +169,8 @@ class _BotaoAvisarState extends State<_BotaoAvisar> {
   @override
   Widget build(BuildContext context) {
     if (!Notificacao.suportada) {
-      return const Text('Quando a equipe resolver, você verá um aviso ao abrir o SOFUR.',
+      return const Text('Quando a equipe resolver, você verá um aviso ao abrir o SOFUR. '
+          'No iPhone, instale o SOFUR na Tela de Início para receber notificações.',
           textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 12));
     }
     if (_ativado) {
@@ -125,7 +184,7 @@ class _BotaoAvisarState extends State<_BotaoAvisar> {
       ]);
     }
     return OutlinedButton.icon(
-      onPressed: _ativar,
+      onPressed: _ativando ? null : _ativar,
       style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
       icon: const Icon(Icons.notifications_none),
       label: const Text('Me avise quando for resolvida'),

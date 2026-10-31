@@ -10,11 +10,12 @@ from enum import Enum
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
+import push
 from auth import Admin, criar_token, ler_token, verificar_login
 from database.connection import aplicar_schema, get_connection
 from repository import OcorrenciaRepository
@@ -117,6 +118,21 @@ class ItemAcompanhamento(BaseModel):
 
 class Acompanhamento(BaseModel):
     itens: list[ItemAcompanhamento] = Field(max_length=200)
+
+
+class ChavesPush(BaseModel):
+    p256dh: str = Field(min_length=10, max_length=200)
+    auth: str = Field(min_length=10, max_length=100)
+
+
+class InscricaoPush(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=1000)
+    keys: ChavesPush
+
+
+class PedidoAviso(BaseModel):
+    chave: str = Field(min_length=10, max_length=100)
+    inscricao: InscricaoPush
 
 
 class StatusUpdate(BaseModel):
@@ -248,8 +264,42 @@ def buscar_ocorrencia(id: int, repo: Repo, _: Admin):
 
 
 @app.patch("/ocorrencias/{id}/status", response_model=Ocorrencia)
-def atualizar_status(id: int, dados: StatusUpdate, repo: Repo, _: Admin):
-    return _ou_404(repo.atualizar(id, "status", dados.status.value))
+def atualizar_status(id: int, dados: StatusUpdate, repo: Repo, _: Admin, tarefas: BackgroundTasks):
+    anterior = _ou_404(repo.buscar(id))
+    atualizada = _ou_404(repo.atualizar(id, "status", dados.status.value))
+    if anterior["status"] != atualizada["status"]:
+        tarefas.add_task(_avisar_celulares, repo, atualizada)
+    return atualizada
+
+
+def _avisar_celulares(repo: OcorrenciaRepository, ocorrencia: dict):
+    """Manda a notificação para os celulares inscritos nesta ocorrência (depois de responder ao painel)."""
+    dados = push.mensagem_status(ocorrencia)
+    if dados is None or not push.configurado():
+        return
+    for inscricao in repo.inscricoes(ocorrencia["id"]):
+        if not push.enviar(inscricao, dados):
+            repo.remover_inscricao(inscricao["endpoint"])
+
+
+@app.get("/push/chave-publica")
+def chave_publica_push():
+    """O app precisa desta chave para inscrever o celular nas notificações."""
+    chave = push.chave_publica()
+    if chave is None:
+        raise HTTPException(status_code=503, detail="Notificações ainda não configuradas no servidor.")
+    return {"chave": chave}
+
+
+@app.post("/ocorrencias/{id}/avisar", status_code=status.HTTP_204_NO_CONTENT)
+def pedir_aviso(id: int, dados: PedidoAviso, repo: Repo):
+    """Quem registrou pede para ser avisado no celular quando a situação mudar."""
+    _ou_404(repo.buscar(id))
+    if not _chave_confere(dados.chave, repo.chave_hash(id)):
+        raise HTTPException(status_code=403, detail="Só quem registrou pode pedir aviso desta ocorrência.")
+    if not dados.inscricao.endpoint.startswith("https://"):
+        raise HTTPException(status_code=422, detail="Endereço de notificação inválido.")
+    repo.salvar_inscricao(id, dados.inscricao.endpoint, dados.inscricao.keys.p256dh, dados.inscricao.keys.auth)
 
 
 @app.delete("/ocorrencias/{id}", status_code=status.HTTP_204_NO_CONTENT)

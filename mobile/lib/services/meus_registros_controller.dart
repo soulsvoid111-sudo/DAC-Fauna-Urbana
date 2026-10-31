@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ocorrencia.dart';
 import 'api.dart';
+import 'notificacao.dart';
 
 enum ResultadoEnvio { enviado, enviadoSemFoto }
 
@@ -107,7 +109,23 @@ class MeusRegistrosController extends ChangeNotifier {
     registros = [registro, ...registros];
     await _gravarNoAparelho();
     notifyListeners();
+    if (Notificacao.permitida) unawaited(ativarAvisos(registro, pedirPermissao: false));
     return (registro, resultado);
+  }
+
+  /// Inscreve este celular para receber a notificação do servidor sobre [registro].
+  /// Devolve true se ficou tudo certo (permissão + inscrição + servidor).
+  Future<bool> ativarAvisos(MeuRegistro registro, {bool pedirPermissao = true}) async {
+    if (pedirPermissao && !Notificacao.permitida && !await Notificacao.pedirPermissao()) return false;
+    if (!Notificacao.permitida) return false;
+    try {
+      final inscricao = await Notificacao.inscrever(await api.chavePublicaPush());
+      if (inscricao == null) return false;
+      await api.pedirAviso(registro, inscricao);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// A tela chama depois de mostrar os avisos.

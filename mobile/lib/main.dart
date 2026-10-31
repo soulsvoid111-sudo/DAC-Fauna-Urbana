@@ -8,7 +8,6 @@ import 'models/ocorrencia.dart';
 import 'screens/inicio_screen.dart';
 import 'screens/registro_screen.dart';
 import 'services/meus_registros_controller.dart';
-import 'services/notificacao.dart';
 import 'theme.dart';
 
 void main() => runApp(SofurApp(controller: MeusRegistrosController()));
@@ -61,7 +60,7 @@ class _HomeShellState extends State<HomeShell> {
   void _avisarMudancas() {
     if (!mounted || widget.controller.mudancas.isEmpty) return;
     for (final m in widget.controller.consumirMudancas()) {
-      Notificacao.mostrar(m.titulo, m.mensagem);
+      // A notificação do celular vem do servidor (push); com o app aberto, basta o aviso na tela.
       if (m.atual == StatusOcorrencia.resolvida) {
         showDialog<void>(
           context: context,

@@ -42,3 +42,14 @@ CREATE TABLE IF NOT EXISTS fotos (
     tipo          VARCHAR(30) NOT NULL,
     criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Celulares que pediram aviso (notificação push) sobre cada ocorrência.
+CREATE TABLE IF NOT EXISTS push_inscricoes (
+    id            SERIAL PRIMARY KEY,
+    ocorrencia_id INTEGER NOT NULL REFERENCES ocorrencias (id) ON DELETE CASCADE,
+    endpoint      TEXT NOT NULL,
+    p256dh        TEXT NOT NULL,
+    auth          TEXT NOT NULL,
+    criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (ocorrencia_id, endpoint)
+);

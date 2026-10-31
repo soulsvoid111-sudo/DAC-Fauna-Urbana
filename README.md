@@ -202,6 +202,12 @@ flutter test
 
 A logo e os ícones ficam em `marca/` e são gerados por código (`python marca/gerar_marca.py`, precisa do Pillow). Para aplicar os ícones no app: copie `marca/icone.png` e `marca/icone_frente.png` para `mobile/assets/` e rode `dart run flutter_launcher_icons` dentro de `mobile/`.
 
+### 7.7 Notificações no celular
+
+* Depois de registrar, o app oferece **"Ativar notificações"**. Com a permissão, o servidor avisa o celular quando a equipe muda a situação (em análise, resolvida, descartada), **mesmo com o SOFUR fechado**.
+* Funciona no Android (Chrome) e no iPhone com o SOFUR instalado na Tela de Início (iOS 16.4+).
+* Configuração no servidor: gere o par de chaves com `python push.py` dentro de `backend/` e crie as variáveis `FAUNA_VAPID_PUBLICA` e `FAUNA_VAPID_PRIVADA` na API (a privada nunca vai para o código).
+
 ---
 
 ## 8. Estrutura do projeto
@@ -243,6 +249,8 @@ DAC-Fauna-Urbana/
 | DELETE | `/ocorrencias/{id}` | Apaga a ocorrência (**admin**) |
 | POST | `/admin/login` | Login do painel; devolve o token |
 | GET | `/admin/estatisticas` | Números do painel (**admin**) |
+| GET | `/push/chave-publica` | Chave para inscrever o celular nas notificações |
+| POST | `/ocorrencias/{id}/avisar` | Inscreve o celular para ser avisado (exige a `chave`) |
 | POST | `/ocorrencias/{id}/foto` | Envia a foto (JPG, PNG ou WEBP, até 8 MB; exige a `chave`) |
 | GET | `/ocorrencias/{id}/foto` | Devolve a foto (exige a `chave` de quem registrou ou o `token` da equipe) |
 
