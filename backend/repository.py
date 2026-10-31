@@ -135,3 +135,29 @@ class OcorrenciaRepository:
             )
             dados["top_especies"] = [{"especie": l["especie"], "total": l["total"]} for l in cursor.fetchall()]
         return dados
+
+    # ---------- Notificações push ----------
+
+    def salvar_inscricao(self, ocorrencia_id: int, endpoint: str, p256dh: str, auth: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO push_inscricoes (ocorrencia_id, endpoint, p256dh, auth) VALUES (%s, %s, %s, %s)
+                ON CONFLICT (ocorrencia_id, endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth;
+                """,
+                (ocorrencia_id, endpoint, p256dh, auth),
+            )
+        self.connection.commit()
+
+    def inscricoes(self, ocorrencia_id: int) -> list[dict]:
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT endpoint, p256dh, auth FROM push_inscricoes WHERE ocorrencia_id = %s;", (ocorrencia_id,)
+            )
+            return cursor.fetchall()
+
+    def remover_inscricao(self, endpoint: str) -> None:
+        with self.connection.cursor() as cursor:
+            cursor.execute("DELETE FROM push_inscricoes WHERE endpoint = %s;", (endpoint,))
+        self.connection.commit()
+

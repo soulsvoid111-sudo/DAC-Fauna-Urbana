@@ -117,7 +117,11 @@ class _RegistroScreenState extends State<RegistroScreen> {
       ));
       if (!mounted) return;
       Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-        builder: (_) => ConfirmacaoScreen(registro: registro, fotoNaoEnviada: resultado == ResultadoEnvio.enviadoSemFoto),
+        builder: (_) => ConfirmacaoScreen(
+          registro: registro,
+          controller: widget.controller,
+          fotoNaoEnviada: resultado == ResultadoEnvio.enviadoSemFoto,
+        ),
       ));
     } on ApiException catch (e) {
       _avisar(e.mensagem);

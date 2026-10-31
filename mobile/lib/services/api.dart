@@ -79,6 +79,25 @@ class FaunaApi {
     return [for (final item in _json(resposta) as List) Ocorrencia.fromJson(Map<String, dynamic>.from(item as Map))];
   }
 
+  /// Chave pública do servidor para inscrever o celular nas notificações.
+  Future<String> chavePublicaPush() async {
+    final resposta = await _client.get(Uri.parse('$baseUrl/push/chave-publica')).timeout(_timeout);
+    _verificar(resposta);
+    return (_json(resposta) as Map)['chave'] as String;
+  }
+
+  /// Pede para este celular ser avisado quando a situação do registro mudar.
+  Future<void> pedirAviso(MeuRegistro registro, Map<String, dynamic> inscricao) async {
+    final resposta = await _client
+        .post(
+          Uri.parse('$baseUrl/ocorrencias/${registro.ocorrencia.id}/avisar'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'chave': registro.chave, 'inscricao': inscricao}),
+        )
+        .timeout(_timeout);
+    _verificar(resposta);
+  }
+
   // ---------- Painel administrativo ----------
 
   Map<String, String> _auth(String token) => {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
