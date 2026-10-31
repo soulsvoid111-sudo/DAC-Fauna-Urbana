@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/ocorrencia.dart';
-import '../services/api.dart';
 import '../services/ocorrencias_controller.dart';
 import '../theme.dart';
 import 'comuns.dart';
@@ -37,19 +36,6 @@ class _Detalhe extends StatelessWidget {
         Uri.parse('https://www.google.com/maps/search/?api=1&query=${ocorrencia.latitude},${ocorrencia.longitude}'),
         mode: LaunchMode.externalApplication,
       );
-
-  Future<void> _mudarStatus(BuildContext context, StatusOcorrencia status) async {
-    try {
-      await controller.atualizarStatus(ocorrencia, status);
-    } on ApiException catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.mensagem)));
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Não foi possível alterar o status agora.')));
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,26 +80,18 @@ class _Detalhe extends StatelessWidget {
             icon: const Icon(Icons.map_outlined),
             label: Text('${o.latitude.toStringAsFixed(5)}, ${o.longitude.toStringAsFixed(5)}'),
           ),
-          const SizedBox(height: 22),
-          const Text('Acompanhamento', style: TextStyle(color: ink, fontWeight: FontWeight.w800, fontSize: 15)),
-          const SizedBox(height: 4),
-          const Text('Atualize conforme a ocorrência for tratada.', style: TextStyle(color: muted, fontSize: 12)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in StatusOcorrencia.values)
-                ChoiceChip(
-                  label: Text(s.rotulo),
-                  selected: o.status == s,
-                  selectedColor: s.cor.withValues(alpha: 0.16),
-                  side: BorderSide(color: o.status == s ? s.cor : border),
-                  onSelected: (_) {
-                    if (o.status != s) _mudarStatus(context, s);
-                  },
-                ),
-            ],
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              Icon(Icons.info_outline, size: 18, color: o.status.cor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Situação: ${o.status.rotulo}. A equipe atualiza o andamento pelo painel administrativo.',
+                    style: const TextStyle(color: muted, fontSize: 12, height: 1.35)),
+              ),
+            ]),
           ),
         ],
       ),

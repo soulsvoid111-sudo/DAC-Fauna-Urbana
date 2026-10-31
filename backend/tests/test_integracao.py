@@ -9,6 +9,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+import auth
 import main
 from database.connection import get_connection
 
@@ -30,7 +31,11 @@ def client():
             conn.execute("DELETE FROM ocorrencias WHERE id = ANY(%s)", (criados,))
 
 
-def test_fluxo_completo_no_banco(client):
+def test_fluxo_completo_no_banco(client, monkeypatch):
+    monkeypatch.setenv("FAUNA_ADMIN_USUARIO", "teste")
+    monkeypatch.setenv("FAUNA_ADMIN_SENHA_HASH", auth.gerar_hash("teste-senha"))
+    monkeypatch.setenv("FAUNA_SECRET_KEY", "chave-de-teste-integracao")
+
     assert client.get("/db-test").json()["database"] == "conectado"
 
     resposta = client.post(
@@ -54,9 +59,19 @@ def test_fluxo_completo_no_banco(client):
     baixada = client.get(resposta.json()["foto_url"])
     assert baixada.status_code == 200 and baixada.content == foto
 
-    resposta = client.patch(f"/ocorrencias/{criada['id']}/status", json={"status": "resolvida"})
-    assert resposta.json()["status"] == "resolvida"
+    # Mudar status exige admin; aqui só conferimos que a rota está protegida.
+    assert client.patch(f"/ocorrencias/{criada['id']}/status", json={"status": "resolvida"}).status_code == 401
+    with get_connection() as conn:
+        conn.execute("UPDATE ocorrencias SET status = 'resolvida' WHERE id = %s", (criada["id"],))
 
     ids = [o["id"] for o in client.get("/ocorrencias?tipo=ferido&status=resolvida").json()]
     assert criada["id"] in ids
     assert client.get("/ocorrencias/resumo").json()["total"] >= 1
+
+    token = client.post("/admin/login", json={"usuario": "teste", "senha": "teste-senha"}).json()["token"]
+    h = {"Authorization": f"Bearer {token}"}
+    est = client.get("/admin/estatisticas", headers=h)
+    assert est.status_code == 200, est.text
+    assert est.json()["total"] >= 1 and len(est.json()["por_dia"]) >= 1
+    assert client.delete(f"/ocorrencias/{criada['id']}", headers=h).status_code == 204
+    client.criados.remove(criada["id"])

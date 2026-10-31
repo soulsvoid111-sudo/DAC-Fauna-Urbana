@@ -84,3 +84,37 @@ class OcorrenciaRepository:
             cursor.execute("SELECT status, COUNT(*) AS total FROM ocorrencias GROUP BY status;")
             por_status = {linha["status"]: linha["total"] for linha in cursor.fetchall()}
         return {"total": sum(por_tipo.values()), "por_tipo": por_tipo, "por_status": por_status}
+
+    def apagar(self, id: int) -> bool:
+        with self.connection.cursor() as cursor:
+            cursor.execute("DELETE FROM ocorrencias WHERE id = %s RETURNING id;", (id,))
+            apagou = cursor.fetchone() is not None
+        self.connection.commit()
+        return apagou
+
+    def estatisticas(self, dias: int = 30) -> dict:
+        urgentes = "('ferido', 'em_risco', 'em_imovel')"
+        with self.connection.cursor() as cursor:
+            dados = self.resumo()
+            cursor.execute(f"SELECT COUNT(*) AS n FROM ocorrencias WHERE tipo IN {urgentes} AND status = 'aberta';")
+            dados["urgentes_abertas"] = cursor.fetchone()["n"]
+            cursor.execute("SELECT COUNT(*) AS n FROM ocorrencias WHERE foto_url IS NOT NULL;")
+            dados["com_foto"] = cursor.fetchone()["n"]
+            cursor.execute(
+                """
+                SELECT (data_registro AT TIME ZONE 'America/Campo_Grande')::date AS dia, COUNT(*) AS total
+                FROM ocorrencias
+                WHERE data_registro >= NOW() - make_interval(days => %s)
+                GROUP BY dia ORDER BY dia;
+                """,
+                (dias,),
+            )
+            dados["por_dia"] = [{"dia": l["dia"].isoformat(), "total": l["total"]} for l in cursor.fetchall()]
+            cursor.execute(
+                """
+                SELECT especie, COUNT(*) AS total FROM ocorrencias
+                WHERE especie IS NOT NULL GROUP BY especie ORDER BY total DESC, especie LIMIT 5;
+                """
+            )
+            dados["top_especies"] = [{"especie": l["especie"], "total": l["total"]} for l in cursor.fetchall()]
+        return dados

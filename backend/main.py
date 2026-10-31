@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
+from auth import Admin, criar_token, verificar_login
 from database.connection import aplicar_schema, get_connection
 from repository import OcorrenciaRepository
 
@@ -45,7 +46,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origens,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -109,6 +110,33 @@ class Resumo(BaseModel):
     total: int
     por_tipo: dict[str, int]
     por_status: dict[str, int]
+
+
+class ContagemDia(BaseModel):
+    dia: str
+    total: int
+
+
+class ContagemEspecie(BaseModel):
+    especie: str
+    total: int
+
+
+class Estatisticas(Resumo):
+    urgentes_abertas: int
+    com_foto: int
+    por_dia: list[ContagemDia]
+    top_especies: list[ContagemEspecie]
+
+
+class LoginEntrada(BaseModel):
+    usuario: str = Field(min_length=1, max_length=100)
+    senha: str = Field(min_length=1, max_length=200)
+
+
+class LoginSaida(BaseModel):
+    token: str
+    usuario: str
 
 
 # ---------- Dependências e erros ----------
@@ -182,8 +210,32 @@ def buscar_ocorrencia(id: int, repo: Repo):
 
 
 @app.patch("/ocorrencias/{id}/status", response_model=Ocorrencia)
-def atualizar_status(id: int, dados: StatusUpdate, repo: Repo):
+def atualizar_status(id: int, dados: StatusUpdate, repo: Repo, _: Admin):
     return _ou_404(repo.atualizar(id, "status", dados.status.value))
+
+
+@app.delete("/ocorrencias/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def apagar_ocorrencia(id: int, repo: Repo, _: Admin):
+    if not repo.apagar(id):
+        raise HTTPException(status_code=404, detail="Ocorrência não encontrada")
+
+
+# ---------- Painel administrativo ----------
+
+@app.post("/admin/login", response_model=LoginSaida)
+def login(dados: LoginEntrada, request: Request):
+    usuario = verificar_login(request, dados.usuario, dados.senha)
+    return {"token": criar_token(usuario), "usuario": usuario}
+
+
+@app.get("/admin/me")
+def quem_sou(usuario: Admin):
+    return {"usuario": usuario}
+
+
+@app.get("/admin/estatisticas", response_model=Estatisticas)
+def estatisticas(repo: Repo, _: Admin, dias: Annotated[int, Query(ge=1, le=365)] = 30):
+    return repo.estatisticas(dias)
 
 
 @app.post("/ocorrencias/{id}/foto", response_model=Ocorrencia)

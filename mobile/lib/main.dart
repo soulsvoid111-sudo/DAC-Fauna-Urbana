@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'admin/admin_app.dart';
+
 import 'screens/lista_screen.dart';
 import 'screens/mapa_screen.dart';
 import 'screens/registro_screen.dart';
@@ -17,7 +19,12 @@ class FaunaUrbanaApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         title: 'Fauna Urbana',
         theme: buildTheme(),
-        home: HomeShell(controller: controller),
+        // Painel administrativo: https://<site>/#/admin
+        initialRoute: '/',
+        routes: {
+          '/': (_) => HomeShell(controller: controller),
+          '/admin': (_) => const AdminGate(),
+        },
       );
 }
 
