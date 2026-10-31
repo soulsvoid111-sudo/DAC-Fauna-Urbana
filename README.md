@@ -173,6 +173,27 @@ flutter test
 * **Manter a API acordada:** o plano gratuito desliga a API após 15 min sem uso. O workflow `.github/workflows/manter-api-acordada.yml` chama a API a cada 10 min. Para ativar, crie a variável `API_URL` em *Settings → Secrets and variables → Actions → Variables*.
 * **Fotos:** ficam guardadas no próprio banco (tabela `fotos`), porque o disco do plano gratuito é apagado a cada reinício.
 
+### 7.5 Painel administrativo
+
+* Endereço: `https://<site>/#/admin` (há também o link "Área da equipe" no fim da lista do app).
+* **Painel:**
+  * totais;
+  * urgentes em aberto;
+  * gráfico dos últimos 30 dias;
+  * ocorrências por tipo e por situação;
+  * espécies mais registradas.
+* **Ocorrências:** busca, filtros, mudança de status e exclusão (com confirmação).
+* **Mapa:** todas as ocorrências.
+* **Segurança:**
+  * mudar status e apagar exigem login;
+  * a senha não fica no código, o servidor guarda só o *hash* (`FAUNA_ADMIN_SENHA_HASH`);
+  * depois de 5 tentativas erradas, o acesso fica bloqueado por 5 minutos;
+  * a sessão vale 12 horas.
+* **Configurar no servidor (variáveis de ambiente da API):**
+  * `FAUNA_ADMIN_USUARIO`: nome de usuário;
+  * `FAUNA_ADMIN_SENHA_HASH`: gerado com `python auth.py "a senha"` dentro de `backend/`;
+  * `FAUNA_SECRET_KEY`: texto aleatório e longo (no Render, use o botão *Generate*).
+
 ---
 
 ## 8. Estrutura do projeto
@@ -209,7 +230,10 @@ DAC-Fauna-Urbana/
 | GET | `/ocorrencias?tipo=&status=&limite=` | Lista, com filtros opcionais |
 | GET | `/ocorrencias/resumo` | Totais por tipo e por status |
 | GET | `/ocorrencias/{id}` | Busca uma ocorrência (**404** se não existir) |
-| PATCH | `/ocorrencias/{id}/status` | Altera o status |
+| PATCH | `/ocorrencias/{id}/status` | Altera o status (**admin**) |
+| DELETE | `/ocorrencias/{id}` | Apaga a ocorrência (**admin**) |
+| POST | `/admin/login` | Login do painel; devolve o token |
+| GET | `/admin/estatisticas` | Números do painel (**admin**) |
 | POST | `/ocorrencias/{id}/foto` | Envia a foto (JPG, PNG ou WEBP, até 8 MB) |
 | GET | `/ocorrencias/{id}/foto` | Devolve a foto |
 
@@ -267,8 +291,8 @@ ocorrencias
 * [x] Fotografia
 * [x] Status das ocorrências e filtros
 * [x] Testes automatizados (API e app)
-* [ ] Autenticação
-* [ ] Área administrativa
+* [x] Autenticação do painel administrativo
+* [x] Área administrativa com login
 * [ ] Inteligência artificial
 
 ---

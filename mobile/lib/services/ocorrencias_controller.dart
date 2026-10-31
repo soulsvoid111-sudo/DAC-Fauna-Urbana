@@ -101,10 +101,14 @@ class OcorrenciasController extends ChangeNotifier {
     return ResultadoRegistro.salvoNaDemo;
   }
 
-  Future<void> atualizarStatus(Ocorrencia ocorrencia, StatusOcorrencia status) async {
-    final atualizada =
-        ocorrencia.demo ? ocorrencia.copyWith(status: status) : await api.atualizarStatus(ocorrencia.id, status);
-    _todas = [for (final o in _todas) (o.id == ocorrencia.id && o.demo == ocorrencia.demo) ? atualizada : o];
+  /// Usados pelo painel admin depois de alterar ou apagar uma ocorrência.
+  void substituir(Ocorrencia nova) {
+    _todas = [for (final o in _todas) o.id == nova.id && !o.demo ? nova : o];
+    notifyListeners();
+  }
+
+  void remover(Ocorrencia ocorrencia) {
+    _todas = _todas.where((o) => !(o.id == ocorrencia.id && o.demo == ocorrencia.demo)).toList();
     notifyListeners();
   }
 

@@ -5,11 +5,14 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 import '../config.dart';
+import '../models/estatisticas.dart';
 import '../models/ocorrencia.dart';
 
 class ApiException implements Exception {
-  ApiException(this.mensagem);
+  ApiException(this.mensagem, {this.statusCode});
   final String mensagem;
+  final int? statusCode;
+  bool get naoAutorizado => statusCode == 401;
   @override
   String toString() => mensagem;
 }
@@ -51,16 +54,51 @@ class FaunaApi {
     return _ler(resposta);
   }
 
-  Future<Ocorrencia> atualizarStatus(int id, StatusOcorrencia status) async {
+  // ---------- Painel administrativo ----------
+
+  Map<String, String> _auth(String token) => {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
+
+  /// Devolve o token de acesso do admin.
+  Future<String> login(String usuario, String senha) async {
+    final resposta = await _client
+        .post(
+          Uri.parse('$baseUrl/admin/login'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'usuario': usuario, 'senha': senha}),
+        )
+        .timeout(const Duration(seconds: 90));
+    _verificar(resposta);
+    return (jsonDecode(utf8.decode(resposta.bodyBytes)) as Map)['token'] as String;
+  }
+
+  Future<String> quemSou(String token) async {
+    final resposta = await _client.get(Uri.parse('$baseUrl/admin/me'), headers: _auth(token)).timeout(const Duration(seconds: 90));
+    _verificar(resposta);
+    return (jsonDecode(utf8.decode(resposta.bodyBytes)) as Map)['usuario'] as String;
+  }
+
+  Future<Estatisticas> estatisticas(String token) async {
+    final resposta =
+        await _client.get(Uri.parse('$baseUrl/admin/estatisticas'), headers: _auth(token)).timeout(_timeout);
+    _verificar(resposta);
+    return Estatisticas.fromJson(jsonDecode(utf8.decode(resposta.bodyBytes)) as Map<String, dynamic>);
+  }
+
+  Future<Ocorrencia> atualizarStatus(int id, StatusOcorrencia status, String token) async {
     final resposta = await _client
         .patch(
           Uri.parse('$baseUrl/ocorrencias/$id/status'),
-          headers: {'Content-Type': 'application/json'},
+          headers: _auth(token),
           body: jsonEncode({'status': status.valorApi}),
         )
         .timeout(_timeout);
     _verificar(resposta);
     return _ler(resposta);
+  }
+
+  Future<void> apagar(int id, String token) async {
+    final resposta = await _client.delete(Uri.parse('$baseUrl/ocorrencias/$id'), headers: _auth(token)).timeout(_timeout);
+    _verificar(resposta);
   }
 
   Ocorrencia _ler(http.Response resposta) =>
@@ -74,7 +112,7 @@ class FaunaApi {
       if (detalhe is String) mensagem = detalhe;
       if (detalhe is List && detalhe.isNotEmpty) mensagem = 'Dados inválidos: ${(detalhe.first as Map)['msg']}';
     } catch (_) {}
-    throw ApiException(mensagem);
+    throw ApiException(mensagem, statusCode: resposta.statusCode);
   }
 
   static MediaType _tipoImagem(String nome) {

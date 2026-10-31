@@ -42,6 +42,15 @@ class ListaScreen extends StatelessWidget {
                       _Vazio(filtrando: c.filtro != null, onRegistrar: onRegistrar)
                     else
                       ...itens.map((o) => _CartaoOcorrencia(controller: c, ocorrencia: o)),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: TextButton.icon(
+                        onPressed: () => Navigator.of(context).pushNamed('/admin'),
+                        style: TextButton.styleFrom(foregroundColor: muted),
+                        icon: const Icon(Icons.admin_panel_settings_outlined, size: 16),
+                        label: const Text('Área da equipe', style: TextStyle(fontSize: 12)),
+                      ),
+                    ),
                   ],
                 ),
               ),
