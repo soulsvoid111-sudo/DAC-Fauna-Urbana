@@ -82,6 +82,16 @@ void main() {
     expect(reaberto.registros.map((r) => r.ocorrencia.id), [7]);
     expect(reaberto.registros.single.ocorrencia.status, StatusOcorrencia.resolvida,
         reason: 'a situação atualizada pela equipe aparece para quem registrou');
+
+    // ...e gera o aviso "foi resolvida" uma única vez.
+    final aviso = reaberto.consumirMudancas().single;
+    expect(aviso.anterior, StatusOcorrencia.aberta);
+    expect(aviso.atual, StatusOcorrencia.resolvida);
+    expect(aviso.mensagem, contains('#7'));
+    expect(aviso.mensagem, contains('Obrigado por contribuir'));
+    expect(reaberto.consumirMudancas(), isEmpty);
+    await reaberto.atualizarSituacao();
+    expect(reaberto.mudancas, isEmpty, reason: 'não repete o aviso se nada mudou');
   });
 
   test('se só a foto falhar, o registro é enviado uma vez e avisa', () async {
@@ -111,6 +121,9 @@ void main() {
 
   testWidgets('tela inicial pública: botão de registrar e "Meus registros", sem lista de outras pessoas',
       (tester) async {
+    tester.view.physicalSize = const Size(400, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(SofurApp(controller: MeusRegistrosController(api: FaunaApi(client: _apiCidadao()))));
     await tester.pumpAndSettle();
 
@@ -119,5 +132,6 @@ void main() {
     expect(find.text('Você ainda não fez registros'), findsOneWidget);
     expect(find.text('Mapa'), findsNothing);
     expect(find.byIcon(Icons.add_a_photo_outlined), findsWidgets);
+    expect(find.text('Instale o SOFUR no celular'), findsOneWidget);
   });
 }

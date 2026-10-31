@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'admin/admin_app.dart';
 import 'config.dart';
+import 'models/ocorrencia.dart';
 import 'screens/inicio_screen.dart';
 import 'screens/registro_screen.dart';
 import 'services/meus_registros_controller.dart';
+import 'services/notificacao.dart';
 import 'theme.dart';
 
 void main() => runApp(SofurApp(controller: MeusRegistrosController()));
@@ -36,10 +40,46 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
+  Timer? _verificacao;
+
   @override
   void initState() {
     super.initState();
+    widget.controller.addListener(_avisarMudancas);
     widget.controller.carregar();
+    // Enquanto o app está aberto, confere a cada minuto se a equipe atualizou algum registro.
+    _verificacao = Timer.periodic(const Duration(seconds: 60), (_) => widget.controller.atualizarSituacao());
+  }
+
+  @override
+  void dispose() {
+    _verificacao?.cancel();
+    widget.controller.removeListener(_avisarMudancas);
+    super.dispose();
+  }
+
+  void _avisarMudancas() {
+    if (!mounted || widget.controller.mudancas.isEmpty) return;
+    for (final m in widget.controller.consumirMudancas()) {
+      Notificacao.mostrar(m.titulo, m.mensagem);
+      if (m.atual == StatusOcorrencia.resolvida) {
+        showDialog<void>(
+          context: context,
+          builder: (contexto) => AlertDialog(
+            icon: const Icon(Icons.volunteer_activism, color: forest, size: 40),
+            title: Text(m.titulo, textAlign: TextAlign.center),
+            content: Text(m.mensagem, textAlign: TextAlign.center),
+            actions: [
+              FilledButton(onPressed: () => Navigator.pop(contexto), child: const Text('Que bom!')),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(m.mensagem), duration: const Duration(seconds: 6)),
+        );
+      }
+    }
   }
 
   void _registrar() => Navigator.push(
