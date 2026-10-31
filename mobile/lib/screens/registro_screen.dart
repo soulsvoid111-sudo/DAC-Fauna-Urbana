@@ -116,9 +116,11 @@ class _RegistroScreenState extends State<RegistroScreen> {
       ));
       if (!mounted) return;
       Navigator.pop(context);
-      _avisarNaTelaAnterior(resultado == ResultadoRegistro.salvoNoBanco
-          ? 'Ocorrência registrada. Obrigado por ajudar!'
-          : 'Sem conexão: o registro ficou só neste aparelho (modo demonstração).');
+      _avisarNaTelaAnterior(switch (resultado) {
+        ResultadoRegistro.salvoNoBanco => 'Ocorrência registrada. Obrigado por ajudar!',
+        ResultadoRegistro.salvoSemFoto => 'Ocorrência registrada, mas a foto não foi enviada. Tente uma foto menor.',
+        ResultadoRegistro.salvoNaDemo => 'Sem conexão: o registro ficou só neste aparelho (modo demonstração).',
+      });
     } on ApiException catch (e) {
       _avisar(e.mensagem);
       setState(() => _enviando = false);

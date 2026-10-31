@@ -19,12 +19,13 @@ class FaunaApi {
 
   final http.Client _client;
   final String baseUrl;
-  static const _timeout = Duration(seconds: 8);
+  static const _timeout = Duration(seconds: 20);
 
   String urlFoto(String caminho) => caminho.startsWith('http') ? caminho : '$baseUrl$caminho';
 
-  Future<List<Ocorrencia>> listar() async {
-    final resposta = await _client.get(Uri.parse('$baseUrl/ocorrencias')).timeout(_timeout);
+  /// [timeout] maior serve para esperar o servidor gratuito "acordar".
+  Future<List<Ocorrencia>> listar({Duration timeout = _timeout}) async {
+    final resposta = await _client.get(Uri.parse('$baseUrl/ocorrencias')).timeout(timeout);
     _verificar(resposta);
     final lista = jsonDecode(utf8.decode(resposta.bodyBytes)) as List<dynamic>;
     return lista.map((item) => Ocorrencia.fromJson(Map<String, dynamic>.from(item as Map))).toList();
@@ -39,17 +40,13 @@ class FaunaApi {
         )
         .timeout(_timeout);
     _verificar(resposta);
-    var criada = _ler(resposta);
-    if (nova.foto != null) {
-      criada = await enviarFoto(criada.id, nova.foto!, nova.nomeFoto ?? 'foto.jpg');
-    }
-    return criada;
+    return _ler(resposta);
   }
 
   Future<Ocorrencia> enviarFoto(int id, Uint8List bytes, String nome) async {
     final requisicao = http.MultipartRequest('POST', Uri.parse('$baseUrl/ocorrencias/$id/foto'))
       ..files.add(http.MultipartFile.fromBytes('foto', bytes, filename: nome, contentType: _tipoImagem(nome)));
-    final resposta = await http.Response.fromStream(await _client.send(requisicao).timeout(const Duration(seconds: 30)));
+    final resposta = await http.Response.fromStream(await _client.send(requisicao).timeout(const Duration(seconds: 60)));
     _verificar(resposta);
     return _ler(resposta);
   }

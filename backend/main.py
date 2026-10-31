@@ -1,29 +1,42 @@
+import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Annotated
 
 import psycopg
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, field_validator
 
-from database.connection import get_connection
+from database.connection import aplicar_schema, get_connection
 from repository import OcorrenciaRepository
 
-PASTA_UPLOADS = Path(os.getenv("FAUNA_UPLOADS_DIR", Path(__file__).parent / "uploads"))
-PASTA_UPLOADS.mkdir(parents=True, exist_ok=True)
+log = logging.getLogger("fauna")
 TAMANHO_MAXIMO_FOTO = 8 * 1024 * 1024  # 8 MB
-EXTENSOES_FOTO = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+TIPOS_FOTO = {"image/jpeg", "image/png", "image/webp"}
+
+
+@asynccontextmanager
+async def ciclo_de_vida(_: FastAPI):
+    # Cria/atualiza as tabelas ao iniciar. Desligue com FAUNA_AUTO_SCHEMA=0.
+    if os.getenv("FAUNA_AUTO_SCHEMA", "1") != "0":
+        try:
+            aplicar_schema()
+            log.warning("Tabelas do banco verificadas.")
+        except Exception as erro:  # a API sobe mesmo sem banco; as rotas respondem 503
+            log.error("Não foi possível preparar o banco: %s", erro)
+    yield
+
 
 app = FastAPI(
     title="Fauna Urbana API",
     description="Registro e acompanhamento de ocorrências de fauna urbana.",
-    version="0.2.0",
+    version="0.3.0",
+    lifespan=ciclo_de_vida,
 )
 
 # Origens liberadas separadas por vírgula. Ex.: FAUNA_CORS_ORIGINS=http://localhost:5000
@@ -35,8 +48,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["*"],
 )
-
-app.mount("/uploads", StaticFiles(directory=PASTA_UPLOADS), name="uploads")
 
 
 # ---------- Modelos ----------
@@ -179,15 +190,25 @@ def atualizar_status(id: int, dados: StatusUpdate, repo: Repo):
 async def enviar_foto(id: int, repo: Repo, foto: UploadFile = File(...)):
     _ou_404(repo.buscar(id))
 
-    extensao = EXTENSOES_FOTO.get(foto.content_type or "")
-    if extensao is None:
+    if foto.content_type not in TIPOS_FOTO:
         raise HTTPException(status_code=415, detail="Envie uma imagem JPG, PNG ou WEBP.")
 
     conteudo = await foto.read(TAMANHO_MAXIMO_FOTO + 1)
     if len(conteudo) > TAMANHO_MAXIMO_FOTO:
         raise HTTPException(status_code=413, detail="A foto deve ter no máximo 8 MB.")
 
-    nome_arquivo = f"{id}_{uuid.uuid4().hex}{extensao}"
-    (PASTA_UPLOADS / nome_arquivo).write_bytes(conteudo)
+    # O "v" muda a cada envio para o app não mostrar a foto antiga do cache.
+    foto_url = f"/ocorrencias/{id}/foto?v={uuid.uuid4().hex[:8]}"
+    return repo.salvar_foto(id, conteudo, foto.content_type, foto_url)
 
-    return repo.atualizar(id, "foto_url", f"/uploads/{nome_arquivo}")
+
+@app.get("/ocorrencias/{id}/foto")
+def baixar_foto(id: int, repo: Repo):
+    foto = repo.buscar_foto(id)
+    if foto is None:
+        raise HTTPException(status_code=404, detail="Esta ocorrência não tem foto")
+    return Response(
+        content=bytes(foto["conteudo"]),
+        media_type=foto["tipo"],
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

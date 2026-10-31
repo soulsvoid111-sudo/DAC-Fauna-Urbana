@@ -32,3 +32,11 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_ocorrencias_data   ON ocorrencias (data_registro DESC);
 CREATE INDEX IF NOT EXISTS idx_ocorrencias_tipo   ON ocorrencias (tipo);
 CREATE INDEX IF NOT EXISTS idx_ocorrencias_status ON ocorrencias (status);
+
+-- Fotos guardadas no próprio banco (a hospedagem gratuita apaga arquivos do servidor a cada reinício).
+CREATE TABLE IF NOT EXISTS fotos (
+    ocorrencia_id INTEGER PRIMARY KEY REFERENCES ocorrencias (id) ON DELETE CASCADE,
+    conteudo      BYTEA NOT NULL,
+    tipo          VARCHAR(30) NOT NULL,
+    criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

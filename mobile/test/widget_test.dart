@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -61,6 +63,33 @@ void main() {
       throwsA(isA<ApiException>()),
     );
     expect(controller.modoDemonstracao, isFalse);
+  });
+
+  test('se só a foto falhar, o registro fica salvo uma vez, sem cair na demonstração', () async {
+    final api = FaunaApi(
+      client: MockClient((req) async {
+        if (req.method == 'GET') return http.Response('[]', 200);
+        if (req.url.path.endsWith('/foto')) throw http.ClientException('caiu no meio');
+        return http.Response(
+          '{"id":5,"latitude":-20.47,"longitude":-54.62,"situacao":"Arara","tipo":"avistamento",'
+          '"status":"aberta","especie":null,"foto_url":null,"data_registro":"2026-10-30T10:00:00Z"}',
+          201,
+        );
+      }),
+    );
+    final controller = OcorrenciasController(api: api);
+    await controller.carregar();
+
+    final resultado = await controller.registrar(NovaOcorrencia(
+      ponto: const LatLng(-20.47, -54.62),
+      situacao: 'Arara',
+      tipo: TipoOcorrencia.avistamento,
+      foto: Uint8List.fromList([1, 2, 3]),
+      nomeFoto: 'a.jpg',
+    ));
+    expect(resultado, ResultadoRegistro.salvoSemFoto);
+    expect(controller.modoDemonstracao, isFalse);
+    expect(controller.todas.map((o) => o.id), [5]);
   });
 
   testWidgets('tela inicial mostra registros e as abas', (tester) async {
