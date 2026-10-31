@@ -1,14 +1,5 @@
-import psycopg
-import os
+"""Teste rápido de conexão: python test_db.py"""
+from database.connection import get_connection
 
-connection = psycopg.connect(
-    host="localhost",
-    dbname="fauna_urbana",
-    user="fauna_app",
-    password=os.getenv("FAUNA_DB_PASSWORD")
-)
-
-print("Conexão com PostgreSQL realizada com sucesso!")
-
-connection.close()
-
+with get_connection() as connection:
+    print("Conexão com PostgreSQL realizada com sucesso!")

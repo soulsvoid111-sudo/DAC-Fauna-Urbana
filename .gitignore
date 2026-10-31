@@ -16,3 +16,7 @@ backend/**/*.pyc
 # OS
 .DS_Store
 Thumbs.db
+
+# Fotos enviadas pelo app
+backend/uploads/
+backend/.pytest_cache/
